@@ -1,0 +1,41 @@
+# Minimal base. Installed with --apt-recommends false, so every package here is deliberate.
+# Remote access, discovery, printing, Bluetooth and VM desktop-integration (clipboard / drag-and-drop /
+# shared folders) packages are intentionally absent; tests/security/test_os_hardening.py enforces this.
+
+# Boot and system
+linux-image-amd64
+live-boot
+systemd-sysv
+systemd-resolved
+udev
+dbus
+ca-certificates
+
+# Security
+nftables
+apparmor
+apparmor-utils
+cryptsetup
+cryptsetup-initramfs
+
+# Hypervisor guest services without desktop integration (time sync, graceful shutdown)
+open-vm-tools
+
+# Runtime for the backend (Python version follows the Debian release; requirement is >= 3.12)
+python3
+python3-venv
+sqlite3
+
+# Python libraries the backend imports (backend/, installed at /opt/pai/backend by os/build/assemble-config.sh).
+# Debian's own packages, not pip: signed and security-updated by the archive and frozen with it by PAI_SNAPSHOT
+# (threat T12), with nothing to compile or download on the image. apt pulls their hard dependencies too (anyio, h11,
+# click, wsproto, uvloop, ...), tested on trixie with --no-install-recommends. tests/security/test_image_assembly.py
+# fails when the backend imports a third-party module that has no python3-<module> package here.
+# fastapi: the HTTP application (backend/api).
+python3-fastapi
+# starlette: imported directly (the request guard middleware, the threadpool helper); fastapi is built on it.
+python3-starlette
+# uvicorn: the ASGI server that python -m backend runs.
+python3-uvicorn
+# pydantic: the settings model and the API response models.
+python3-pydantic

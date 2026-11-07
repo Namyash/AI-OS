@@ -1,0 +1,6 @@
+/* Three rows filling the screen: header, conversation (takes the rest), status bar. */
+.app-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100%;
+}

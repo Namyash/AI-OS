@@ -1,0 +1,86 @@
+[pai-e2e] kernel=/live/vmlinuz-6.12.115+deb13.1-amd64 initrd=/live/initrd.img-6.12.115+deb13.1-amd64
+[pai-e2e] exec qemu-system-x86_64 -accel tcg -machine pc -cpu max -m 2048 -smp 2 -nographic -monitor none -serial stdio -no-reboot -kernel /work/kernel -initrd /work/initrd -append 'boot=live components console=ttyS0 pai.selfcheck=1' -drive file=/iso/boot.iso,media=cdrom,readonly=on,format=raw -netdev user,id=net0,restrict=on -device virtio-net-pci,netdev=net0,romfile= -device virtio-rng-pci
+<ESC>c<ESC>[?7l<ESC>[2J<ESC>[0mSeaBIOS (version 1.16.3-debian-1.16.3-2)
+Booting from ROM...
+Probing EDD (edd=off to disable)... o<ESC>c<ESC>[?7l<ESC>[2J<ESC>[0mk
+[    0.000000] Linux version 6.12.115+deb13.1-amd64 (debian-kernel@lists.debian.org) (x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0, GNU ld (GNU Binutils for Debian) 2.44) #1 SMP PREEMPT_DYNAMIC Debian 6.12.115-2 (2026-11-01)
+[    0.000000] Command line: boot=live components console=ttyS0 pai.selfcheck=1
+[    0.000000] BIOS-provided physical RAM map:
+[    0.000000] BIOS-e820: [mem 0x0000000000000000-0x000000000009fbff] usable
+[    0.000000] BIOS-e820: [mem 0x000000000009fc00-0x000000000009ffff] reserved
+[    0.000000] BIOS-e820: [mem 0x00000000000f0000-0x00000000000fffff] reserved
+[    0.000000] BIOS-e820: [mem 0x0000000000100000-0x000000007ffdffff] usable
+[    0.000000] BIOS-e820: [mem 0x000000007ffe0000-0x000000007fffffff] reserved
+[    0.000000] BIOS-e820: [mem 0x00000000fffc0000-0x00000000ffffffff] reserved
+[    0.000000] BIOS-e820: [mem 0x000000fd00000000-0x000000ffffffffff] reserved
+[    0.000000] NX (Execute Disable) protection: active
+[    0.000000] APIC: Static calls initialized
+[    0.000000] SMBIOS 2.8 present.
+[    0.000000] DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.3-debian-1.16.3-2 04/01/2014
+[    0.000000] DMI: Memory slots populated: 1/1
+[    0.000000] tsc: Fast TSC calibration using PIT
+[    0.000000] tsc: Detected 2495.698 MHz processor
+[    0.021116] last_pfn = 0x7ffe0 max_arch_pfn = 0x10000000000
+[    0.022258] MTRR map: 4 entries (3 fixed + 1 variable; max 19), built from 8 variable MTRRs
+[    0.022688] x86/PAT: Configuration [0-7]: WB  WC  UC- UC  WB  WP  UC- WT  
+[    0.048151] found SMP MP-table at [mem 0x000f5470-0x000f547f]
+[    0.050947] Using GB pages for direct mapping
+[    0.060112] RAMDISK: [mem 0x7d6ae000-0x7ffdffff]
+[    0.064695] ACPI: Early table checksum verification disabled
+[    0.065415] ACPI: RSDP 0x00000000000F52A0 000014 (v00 BOCHS )
+[    0.065902] ACPI: RSDT 0x000000007FFE2396 000034 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.067184] ACPI: FACP 0x000000007FFE2242 000074 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.068442] ACPI: DSDT 0x000000007FFE0040 002202 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.068640] ACPI: FACS 0x000000007FFE0000 000040
+[    0.068736] ACPI: APIC 0x000000007FFE22B6 000080 (v03 BOCHS  BXPC     00000001 BXPC 00000001)
+[    0.068775] ACPI: HPET 0x000000007FFE2336 000038 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+...
+
+[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39mcron.service<ESC>[0m - Regular background program processing daemon.
+
+         Starting <ESC>[0;1;39mdbus.service<ESC>[0m - D-Bus System Message Bus...
+
+         Starting <ESC>[0;1;39me2scrub_reap.service<ESC>[0m - Re…ne ext4 Metadata Check Snapshots...
+
+         Starting <ESC>[0;1;39msystemd-logind.service<ESC>[0m - User Login Management...
+
+         Starting <ESC>[0;1;39msystemd-user-sessions.service<ESC>[0m - Permit User Sessions...
+
+[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39mdbus.service<ESC>[0m - D-Bus System Message Bus.
+
+[<ESC>[0;32m  OK  <ESC>[0m] Finished <ESC>[0;1;39msystemd-user-sessions.service<ESC>[0m - Permit User Sessions.
+
+[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39mgetty@tty1.service<ESC>[0m - Getty on tty1.
+
+[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39mserial-getty@ttyS0.service<ESC>[0m - Serial Getty on ttyS0.
+
+[<ESC>[0;32m  OK  <ESC>[0m] Reached target <ESC>[0;1;39mgetty.target<ESC>[0m - Login Prompts.
+
+[<ESC>[0;32m  OK  <ESC>[0m] Finished <ESC>[0;1;39me2scrub_reap.service<ESC>[0m - Re…line ext4 Metadata Check Snapshots.
+
+[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39msystemd-logind.service<ESC>[0m - User Login Management.
+
+[<ESC>[0;32m  OK  <ESC>[0m] Reached target <ESC>[0;1;39mmulti-user.target<ESC>[0m - Multi-User System.
+
+         Starting <ESC>[0;1;39mpai-selfcheck.service<ESC>[0m - P…e AI OS boot security self-check...
+
+[   68.361874] security-selfcheck.sh[928]: PAI-SELFCHECK|live-root|PASS|examining the live /proc, /etc and tools
+[   71.087182] security-selfcheck.sh[928]: PAI-SELFCHECK|nft-default-drop|PASS|filter base chains with policy drop: input=1, forward=1, output=1
+[   71.372883] security-selfcheck.sh[928]: PAI-SELFCHECK|modules-blocked|PASS|blocked and not loaded: vboxsf
+[   71.450806] security-selfcheck.sh[928]: PAI-SELFCHECK|sysctl-live|PASS|18 settings match the live kernel
+<ESC>[!p<ESC>]104<ESC>[?7h<ESC>[6n<ESC>[32766;32766H<ESC>[6n[   72.267017] security-selfcheck.sh[928]: PAI-SELFCHECK|no-external-listeners|PASS|no listener beyond loopback; allowed: udp 10.0.2.15:68, udp6 [fe80::2b0a:9f5a:7cb3:72f0]:546, udp6 [fe80::5054:ff:fe12:3456]:546, udp6 [fec0::383c:174f:7743:b0bf]:546, udp6 [fec0::5054:ff:fe12:3456]:546
+[   72.434164] security-selfcheck.sh[928]: PAI-SELFCHECK|units-active|PASS|active: nftables.service systemd-networkd.service
+[   72.437420] security-selfcheck.sh[928]: PAI-SELFCHECK|RESULT|PASS|6/6
+<ESC>[!p<ESC>]104<ESC>[?7h<ESC>[6n<ESC>[32766;32766H<ESC>[6n[   73.338272] systemd-shutdown[1]: Syncing filesystems and block devices.
+[   73.345155] systemd-shutdown[1]: Sending SIGTERM to remaining processes...
+[   73.488129] systemd-journald[475]: Received SIGTERM from PID 1 (systemd-shutdow).
+[   73.742328] systemd-shutdown[1]: Sending SIGKILL to remaining processes...
+[   73.807528] systemd-shutdown[1]: Unmounting file systems.
+[   73.820340] (sd-umount)[981]: Unmounting '/run/credentials/serial-getty@ttyS0.service'.
+[   73.830269] (sd-umount)[982]: Unmounting '/run/credentials/getty@tty1.service'.
+[   73.841088] (sd-umount)[983]: Unmounting '/run/credentials/systemd-networkd.service'.
+[   73.851464] (sd-umount)[984]: Unmounting '/run/credentials/systemd-resolved.service'.
+[   73.876332] (sd-umount)[986]: Unmounting '/tmp'.
+[   73.885817] (sd-umount)[987]: Unmounting '/run/credentials/systemd-journald.service'.
+[   73.895534] (sd-umount)[988]: Unmounting '/run/lock'.
+[   73.903933] (sd-remount)[989]: Remounting '/' read-only with options 'lowerdir=/run/live/rootfs/filesystem.squashfs/,upperdir=/run/live/overlay/rw,workdir=/run/live/overlay/work,redirect_dir=on,uuid=on'.

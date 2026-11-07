@@ -1,0 +1,96 @@
+.conversation {
+  /* Lets the scroll area below shrink instead of pushing the composer and status bar off screen. */
+  min-height: 0;
+}
+
+.conversation__column {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, var(--column-width));
+  height: 100%;
+  margin-inline: auto;
+}
+
+.conversation__scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: var(--space-6) var(--gutter) var(--space-4);
+  overflow-y: auto;
+  /* If the content ever outgrows the screen, a slim scrollbar in the palette instead of the system default. */
+  scrollbar-color: var(--control-border) transparent;
+  scrollbar-width: thin;
+}
+
+/* Centred while there is room, top-aligned (and scrollable) when there is not. */
+.empty-state {
+  margin-block: auto;
+}
+
+.empty-state__heading {
+  max-width: 17ch;
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-display);
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+
+.empty-state__intro {
+  max-width: 34rem;
+  margin: 0;
+  text-wrap: pretty;
+}
+
+.composer {
+  padding: var(--space-2) var(--gutter) var(--space-4);
+}
+
+/* Dashed outline: the same "waiting, not active" cue as the dashed state mark. */
+.composer__field {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px dashed var(--control-border);
+  border-radius: var(--radius-field);
+  background: var(--surface);
+}
+
+.composer__input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-muted);
+  font: inherit;
+  line-height: 1.5;
+  resize: none;
+}
+
+.composer__input::placeholder {
+  color: var(--ink-muted);
+  opacity: 1;
+}
+
+.composer__send {
+  padding: var(--space-2) var(--space-4);
+  border: 1px dashed var(--control-border);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--ink-muted);
+  font: inherit;
+  font-weight: 600;
+}
+
+.composer__reason {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  color: var(--ink-muted);
+  font-size: var(--text-small);
+}

@@ -1,0 +1,38 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: 1.6;
+  text-size-adjust: 100%;
+}
+
+/* Visible keyboard focus on everything that can take it, including scrollable regions. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--ink);
+  color: var(--ground);
+}
+
+/*
+ * Motion: the only animation is the turning "connecting" mark (components/StateMark.css), which stops under
+ * prefers-reduced-motion. There are no transitions and no smooth scrolling. A new animation must add its own
+ * reduced-motion rule next to it.
+ */

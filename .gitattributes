@@ -1,0 +1,6 @@
+# LF in the working tree everywhere: scripts and configs run on Linux (CRLF breaks them) and the
+# frontend linter (Biome) rejects CRLF, so a default Windows checkout must not convert line endings.
+* text=auto eol=lf
+*.png binary
+*.woff2 binary
+*.iso binary

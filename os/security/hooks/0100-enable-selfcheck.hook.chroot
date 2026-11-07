@@ -1,0 +1,10 @@
+#!/bin/sh
+# Runs inside the image chroot at build time: arm the boot security self-check.
+# The unit only starts when the kernel command line contains pai.selfcheck=1 (ConditionKernelCommandLine in the
+# unit), so enabling it here changes nothing on a normal boot.
+#
+# The account the unit runs as (pai-selfcheck) is defined in os/systemd/rootfs/usr/lib/sysusers.d/pai.conf with the
+# other service accounts, and created by the hook of that component. File modes are set for every file by
+# os/build/assemble-config.sh (the script is 0755 because it starts with #!, the unit is 0644).
+set -e
+systemctl enable pai-selfcheck.service

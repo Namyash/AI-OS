@@ -1,0 +1,13 @@
+#!/bin/sh
+# Runs inside the image chroot at build time: create the service accounts and enable the backend service.
+#
+# Accounts are created here, not only at boot: systemd-sysusers.service runs at boot only when /etc needs an update
+# (ConditionNeedsUpdate=|/etc), and creating them now fixes their UIDs in the image, so files that persist on the
+# encrypted data volume keep the same owner across boots. The file defines every account of the image, including
+# the ones other components' units run as (see the comments in it).
+#
+# File modes are not set here: os/build/assemble-config.sh gives every file it installs the same modes (units and
+# sysusers files 0644, scripts 0755), whatever the build host reported.
+set -e
+systemd-sysusers /usr/lib/sysusers.d/pai.conf
+systemctl enable pai-backend.service

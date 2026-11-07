@@ -1,0 +1,33 @@
+.status-bar {
+  border-top: 1px solid var(--rule);
+  font-size: var(--text-small);
+}
+
+.status-bar__inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-6);
+  width: min(100%, var(--column-width));
+  margin-inline: auto;
+  padding: var(--space-3) var(--gutter);
+}
+
+.status-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-2);
+  line-height: 1.6;
+}
+
+.status-line__detail {
+  color: var(--ink-muted);
+}
+
+.status-line[data-tone="attention"] .state-mark {
+  color: var(--attention);
+}
+
+.status-line[data-tone="danger"] .state-mark {
+  color: var(--danger);
+}

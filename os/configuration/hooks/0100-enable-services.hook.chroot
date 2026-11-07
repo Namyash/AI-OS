@@ -1,0 +1,4 @@
+#!/bin/sh
+# Runs inside the image chroot at build time: enable the baseline security and networking services.
+set -e
+systemctl enable nftables.service systemd-networkd.service systemd-resolved.service

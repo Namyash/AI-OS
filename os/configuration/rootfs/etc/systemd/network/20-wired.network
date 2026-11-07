@@ -1,0 +1,8 @@
+[Match]
+Type=ether
+
+[Network]
+DHCP=yes
+# Name resolution is configured by the network-policy service; no DNS is used until the user allows it.
+LLMNR=no
+MulticastDNS=no

@@ -1,0 +1,63 @@
+/*
+ * Design tokens. Colour follows the operating system's light/dark preference; there is no manual switch.
+ *
+ * Principle: quiet when healthy. Everything is ink on a pale mineral ground; colour appears only for
+ * conditions that need attention, and every such condition also differs in shape and wording.
+ *
+ * Contrast is enforced by tests/tokens-contrast.test.ts: text pairs >= 4.5:1, control outlines and status marks >= 3:1,
+ * in both themes. Change a colour here and that test tells you whether it still holds.
+ */
+:root {
+  color-scheme: light dark;
+
+  /* Colour, light */
+  --ground: #e6ece7;
+  --surface: #f6f9f6;
+  --ink: #14302b;
+  --ink-muted: #46605a;
+  --rule: #c2cec7; /* decorative separators only: never the sole carrier of meaning */
+  --control-border: #6b857c;
+  --focus: var(--ink);
+  --attention: #7a4d00;
+  --danger: #a12b22;
+
+  /* Type */
+  --font-sans: "Atkinson Hyperlegible Next Variable", system-ui, "Segoe UI", "Noto Sans", "DejaVu Sans", sans-serif;
+  --text-body: 1.0625rem;
+  --text-small: 0.9375rem;
+  --text-display: clamp(1.875rem, 1.25rem + 2vw, 2.75rem);
+
+  /* Space and shape */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --gutter: clamp(1rem, 4vw, 2rem);
+  --column-width: 46rem;
+  --radius-field: 0.625rem;
+  --radius-control: 0.5rem;
+}
+
+/* Short screens (800x600 and below): tighter vertical rhythm, so the empty state and composer fit without scrolling. */
+@media (max-height: 44rem) {
+  :root {
+    --space-3: 0.5rem;
+    --space-4: 0.75rem;
+    --space-6: 1rem;
+    --text-display: clamp(1.75rem, 1rem + 2vw, 2.25rem);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #0f1b18;
+    --surface: #16251f;
+    --ink: #e4eee9;
+    --ink-muted: #9fb5ac;
+    --rule: #2b3f38;
+    --control-border: #5f7c71;
+    --attention: #e8b85c;
+    --danger: #f28b82;
+  }
+}
