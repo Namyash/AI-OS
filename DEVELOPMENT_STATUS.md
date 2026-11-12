@@ -1,6 +1,6 @@
 # Development Status
 
-Last updated: 2026-11-12. Read this first when resuming. A single commit exists (`Initial commit of Private AI OS`, not made by the assistant); everything after it, including all of M1.2 to M1.5, is uncommitted working-tree changes.
+Last updated: 2026-11-12. Read this first when resuming. Two commits exist on `main`: `Initial commit of Private AI OS` (not made by the assistant) and `Phase 1: kiosk session handoff and encrypted LUKS2 installer (M1.2-M1.5)`, which holds the work described below. The initial commit is on `origin/main`; the Phase 1 commit was local only when this was written (check `git status -sb` for the current state).
 
 ## Where we are
 
