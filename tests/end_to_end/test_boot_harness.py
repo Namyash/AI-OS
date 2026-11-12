@@ -17,9 +17,10 @@ from pathlib import Path
 
 import pytest
 
-from tests.end_to_end import boot_harness
+from tests.end_to_end import boot_harness, container_boot
 from tests.end_to_end.boot_harness import (
     ENV_CPUS,
+    ENV_EXTRA_ARGS,
     ENV_ISO,
     ENV_MEMORY,
     ENV_TIMEOUT,
@@ -56,6 +57,11 @@ def test_config_default_timeout_is_generous_for_software_emulation() -> None:
     assert BootConfig.from_env({}).timeout_s >= 900
 
 
+def test_config_default_memory_is_enough_for_the_kiosk_browser_and_can_still_be_set() -> None:
+    assert BootConfig.from_env({}).memory_mib >= 3072
+    assert BootConfig.from_env({ENV_MEMORY: "2048"}).memory_mib == 2048
+
+
 def test_config_reads_every_variable() -> None:
     config = BootConfig.from_env({ENV_TIMEOUT: "90.5", ENV_MEMORY: "4096", ENV_CPUS: "4"})
     assert config == BootConfig(timeout_s=90.5, memory_mib=4096, cpus=4)
@@ -77,6 +83,67 @@ def test_unusable_values_are_rejected_with_the_variable_name(name: str, bad: str
 def test_a_fractional_memory_or_cpu_count_is_rejected_instead_of_silently_truncated(name: str, fractional: str) -> None:
     with pytest.raises(ConfigError, match=f"{name} must be a whole number"):
         BootConfig.from_env({name: fractional})
+
+
+# ---- PAI_BOOT_EXTRA_ARGS ----------------------------------------------------------------------------------------
+
+
+def test_extra_kernel_args_default_to_none_and_blank_means_none() -> None:
+    assert BootConfig.from_env({}).extra_kernel_args == ""
+    assert BootConfig.from_env({ENV_EXTRA_ARGS: "   "}).extra_kernel_args == ""
+
+
+def test_extra_kernel_args_are_read_with_their_spacing_normalised() -> None:
+    config = BootConfig.from_env({ENV_EXTRA_ARGS: "  systemd.journald.forward_to_console=1   loglevel=7 "})
+    assert config.extra_kernel_args == "systemd.journald.forward_to_console=1 loglevel=7"
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "a\nb",
+        "a\tb",
+        "a\rb",
+        "x\x1b[2Jy",
+        "a\x00b",
+        "caf\u00e9",
+        "\u202ertl",
+        "a" * (container_boot.MAX_EXTRA_KERNEL_ARGS_LENGTH + 1),
+    ],
+    ids=["newline", "tab", "carriage-return", "escape", "nul", "non-ascii", "bidi-override", "too-long"],
+)
+def test_extra_kernel_args_with_control_characters_or_too_long_are_rejected_naming_the_variable(bad: str) -> None:
+    with pytest.raises(ConfigError, match=ENV_EXTRA_ARGS) as error:
+        BootConfig.from_env({ENV_EXTRA_ARGS: bad})
+    assert "\x1b" not in str(error.value)  # a control character is counted, never echoed
+
+
+def test_extra_kernel_args_at_the_length_limit_are_accepted() -> None:
+    word = "a" * container_boot.MAX_EXTRA_KERNEL_ARGS_LENGTH
+    assert BootConfig.from_env({ENV_EXTRA_ARGS: word}).extra_kernel_args == word
+
+
+def test_extra_kernel_args_reach_the_container_script_as_one_argument_only_when_set() -> None:
+    assert not [word for word in _argv() if word.startswith("--extra-kernel-args")]
+    argv = _argv(config=BootConfig(extra_kernel_args="-x systemd.journald.forward_to_console=1"))
+    assert "--extra-kernel-args=-x systemd.journald.forward_to_console=1" in argv  # one element, not split into words
+
+
+def test_extra_kernel_args_travel_from_the_environment_into_the_qemu_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    """PAI_BOOT_EXTRA_ARGS -> BootConfig -> `docker run` arguments -> container_boot.main -> `-append`."""
+    config = BootConfig.from_env({ENV_EXTRA_ARGS: "systemd.journald.forward_to_console=1 loglevel=7"})
+    argv = _argv(config=config)
+    script_arguments = argv[argv.index(f"{boot_harness.IN_CONTAINER_HARNESS}/container_boot.py") + 1 :]
+    monkeypatch.setattr(container_boot, "list_iso_files", lambda iso: ["/live/vmlinuz", "/live/initrd.img"])
+    monkeypatch.setattr(container_boot, "extract_iso_file", lambda iso, path, dest: None)
+    executed: list[list[str]] = []
+    monkeypatch.setattr(container_boot.os, "execvp", lambda file, args: executed.append(args))
+
+    container_boot.main(script_arguments)
+
+    qemu = executed[0]
+    append = qemu[qemu.index("-append") + 1]
+    assert append == f"{container_boot.KERNEL_ARGS} systemd.journald.forward_to_console=1 loglevel=7"
 
 
 def test_a_whole_number_written_as_a_float_is_accepted() -> None:
@@ -571,7 +638,7 @@ def _cli(
     boot_error: Exception | None = None,
 ) -> list[str]:
     """Replace everything main() touches outside this process; returns its argument list."""
-    for name in (ENV_ISO, ENV_TIMEOUT, ENV_MEMORY, ENV_CPUS):
+    for name in (ENV_ISO, ENV_TIMEOUT, ENV_MEMORY, ENV_CPUS, ENV_EXTRA_ARGS):
         monkeypatch.delenv(name, raising=False)
     iso = tmp_path / "boot.iso"
     iso.write_bytes(b"iso")

@@ -13,6 +13,7 @@ import pytest
 from tests.end_to_end import container_boot
 from tests.end_to_end.container_boot import (
     KERNEL_ARGS,
+    MAX_EXTRA_KERNEL_ARGS_LENGTH,
     BootFiles,
     BootFilesNotFoundError,
     extract_iso_file,
@@ -21,6 +22,7 @@ from tests.end_to_end.container_boot import (
     parse_iso_listing,
     qemu_command,
     select_boot_files,
+    validate_extra_kernel_args,
 )
 
 BUILD_SCRIPT = Path(__file__).resolve().parents[2] / "os" / "build" / "in-container-build.sh"
@@ -127,6 +129,53 @@ def test_qemu_runs_in_software_with_the_serial_console_on_stdio() -> None:
     assert _option(command, "-serial") == "stdio"
     assert _option(command, "-monitor") == "none"
     assert "-no-reboot" in command
+
+
+def test_extra_kernel_args_come_after_the_harness_s_own_words_and_default_to_nothing() -> None:
+    assert _option(_command(), "-append") == KERNEL_ARGS
+    command = qemu_command(
+        kernel=Path("/work/kernel"),
+        initrd=Path("/work/initrd"),
+        iso=Path("/iso/boot.iso"),
+        memory_mib=3072,
+        cpus=3,
+        extra_kernel_args="  systemd.journald.forward_to_console=1   loglevel=7 ",
+    )
+    assert _option(command, "-append") == f"{KERNEL_ARGS} systemd.journald.forward_to_console=1 loglevel=7"
+
+
+@pytest.mark.parametrize(
+    "bad", ["a\nb", "a\tb", "a\x1bb", "a\x00b", "caf\u00e9", "a" * (MAX_EXTRA_KERNEL_ARGS_LENGTH + 1)]
+)
+def test_extra_kernel_args_that_are_not_one_bounded_line_of_printable_ascii_are_refused(bad: str) -> None:
+    with pytest.raises(ValueError, match=r"at most|printable ASCII"):
+        validate_extra_kernel_args(bad)
+    with pytest.raises(ValueError):
+        qemu_command(
+            kernel=Path("/work/kernel"),
+            initrd=Path("/work/initrd"),
+            iso=Path("/iso/boot.iso"),
+            memory_mib=1024,
+            cpus=1,
+            extra_kernel_args=bad,
+        )
+
+
+def test_main_refuses_bad_extra_kernel_args_before_touching_the_iso(monkeypatch: pytest.MonkeyPatch) -> None:
+    called: list[Path] = []
+    monkeypatch.setattr(container_boot, "list_iso_files", lambda iso: called.append(iso) or [])
+    with pytest.raises(SystemExit):
+        main(["/iso/boot.iso", "--memory-mib", "1024", "--cpus", "1", "--extra-kernel-args=bad\nline"])
+    assert called == []
+
+
+def test_main_hands_extra_kernel_args_to_qemu(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(container_boot, "list_iso_files", lambda iso: parse_iso_listing(LIVE_BUILD_LISTING))
+    monkeypatch.setattr(container_boot, "extract_iso_file", lambda iso, path, dest: None)
+    executed: list[list[str]] = []
+    monkeypatch.setattr(container_boot.os, "execvp", lambda file, argv: executed.append(argv))
+    main(["/iso/boot.iso", "--memory-mib", "1024", "--cpus", "1", "--extra-kernel-args=-b loglevel=7"])
+    assert _option(executed[0], "-append") == f"{KERNEL_ARGS} -b loglevel=7"
 
 
 def test_qemu_gets_the_requested_memory_and_cpus() -> None:

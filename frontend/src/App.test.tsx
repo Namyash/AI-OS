@@ -2,10 +2,10 @@ import { act, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import type { FetchLike } from './services/api-client';
-import { HEALTH_BODY, hangingFetch, jsonResponse, makeClient, TEST_TOKEN } from './test/fakes';
+import { HEALTH_BODY, hangingFetch, jsonResponse, makeClient, unauthorizedResponse } from './test/fakes';
 
-function renderApp(fetch: FetchLike, token: string | null = TEST_TOKEN) {
-  return render(<App client={makeClient(fetch, { token })} />);
+function renderApp(fetch: FetchLike) {
+  return render(<App client={makeClient(fetch)} />);
 }
 
 const healthy: FetchLike = async () => jsonResponse(HEALTH_BODY);
@@ -31,19 +31,19 @@ describe('App shell: truthful state', () => {
     expect(screen.getByText('Connection failed. Retrying.')).toBeInTheDocument();
   });
 
-  it('shows a rejected token when the backend answers 401', async () => {
-    renderApp(async () => jsonResponse({ error: { code: 'invalid_token', message: 'Bad token.' } }, 401));
+  it('says this window has no valid session, and how to get one, when the backend answers 401', async () => {
+    const fetch = vi.fn<FetchLike>(async () => unauthorizedResponse());
 
-    expect(await screen.findByText('Access token rejected')).toBeInTheDocument();
-  });
+    renderApp(fetch);
 
-  it('shows a missing token when the page was opened without one', async () => {
-    const fetch = vi.fn<FetchLike>(healthy);
-
-    renderApp(fetch, null);
-
-    expect(await screen.findByText('Access token missing')).toBeInTheDocument();
-    expect(fetch).not.toHaveBeenCalled();
+    expect(await screen.findByText('No valid session')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'This window has no valid session with the assistant service. Restarting the session restores it.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Backend connected')).not.toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it('labels the network state as reported by the browser and follows it', async () => {
@@ -66,13 +66,6 @@ describe('App shell: truthful state', () => {
     expect(header.getByRole('heading', { level: 1, name: 'Private AI OS' })).toBeInTheDocument();
     expect(header.getByText('No model loaded')).toBeInTheDocument();
     expect(header.getByText('Model support is not part of this build yet.')).toBeInTheDocument();
-  });
-
-  it('keeps the access token out of the page', async () => {
-    renderApp(healthy);
-    await screen.findByText('Backend connected');
-
-    expect(document.body.innerHTML).not.toContain(TEST_TOKEN);
   });
 });
 

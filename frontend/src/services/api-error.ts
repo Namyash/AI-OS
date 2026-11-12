@@ -1,22 +1,15 @@
 /**
  * Why a backend request failed. The UI decides what to show (and whether to retry) from `kind` alone.
  *
- * - `no-token`: the page holds no access token, so no request was sent.
- * - `unauthorized`: the backend answered 401; retrying with the same token cannot succeed.
+ * - `unauthorized`: the backend answered 401: this window has no valid session. The page cannot create one (the
+ *   kiosk launcher installs it), so retrying cannot succeed.
  * - `timeout`: no complete reply within the client timeout.
  * - `network`: the request could not be made or the connection broke.
  * - `http`: any other non-2xx answer; `status` and, when the backend sent one, `code` are set.
  * - `invalid-response`: a 2xx answer whose body is not JSON or does not match the expected shape.
  * - `aborted`: the caller cancelled the request (for example on unmount).
  */
-export type ApiErrorKind =
-  | 'no-token'
-  | 'unauthorized'
-  | 'timeout'
-  | 'network'
-  | 'http'
-  | 'invalid-response'
-  | 'aborted';
+export type ApiErrorKind = 'unauthorized' | 'timeout' | 'network' | 'http' | 'invalid-response' | 'aborted';
 
 export interface ApiErrorDetails {
   status?: number;

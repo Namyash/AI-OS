@@ -32,6 +32,12 @@ FORBIDDEN_PACKAGES = {
     "virtualbox-guest-x11",
     "virtualbox-guest-utils",
     "vmhgfs-fuse",
+    # A root daemon that hands the display and input devices to a group. The kiosk takes its seat from logind, so a
+    # second way to the same devices must not be on the image (libseat1 only recommends it: systemd satisfies it).
+    "seatd",
+    # Mounts every other disk to look for operating systems (grub-common only recommends it). The installer touches
+    # exactly one disk, named in its plan, and must never read the others (docs/architecture/INSTALLER_DESIGN.md).
+    "os-prober",
 }
 REQUIRED_PACKAGES = {"nftables", "apparmor", "cryptsetup", "systemd-sysv"}
 HOST_INTEGRATION_MODULES = {"vboxsf"}
@@ -153,6 +159,17 @@ def test_the_third_party_import_scan_ignores_tests_the_standard_library_and_the_
     assert _third_party_imports(package) == {"requests"}
 
 
+def test_no_login_prompt_is_started_on_other_virtual_terminals() -> None:
+    """logind must not spawn a getty on a VT switch (the live autologin would hand out a shell on tty2 to tty6)."""
+    settings: dict[str, str] = {}
+    for path in OS_DIR.glob("**/logind.conf.d/*.conf"):
+        for line in _read(path).splitlines():
+            if "=" in (clean := _strip_comment(line)):
+                key, value = (part.strip() for part in clean.split("=", 1))
+                settings[key] = value
+    assert settings.get("NAutoVTs") == "0"
+
+
 def test_sysctl_hardening_values() -> None:
     settings: dict[str, str] = {}
     for path in OS_DIR.glob("**/sysctl.d/*.conf"):
@@ -182,9 +199,16 @@ def test_resolved_does_not_answer_llmnr_or_multicast_dns() -> None:
         assert settings.get(key) in allowed, f"{key} = {settings.get(key)!r}, expected one of {allowed}"
 
 
+def _live_config_components() -> list[Path]:
+    """The scripts the image's live-config runs at boot, as root. They are named NNNN-<name> with no suffix, so the
+    suffix rules below do not see them; their path (where the package keeps its own components) says what they are."""
+    return [p for p in OS_DIR.glob("*/rootfs/usr/lib/live/config/*") if p.is_file()]
+
+
 def _text_sources() -> list[Path]:
     suffixes = {".sh", ".conf", ".network", ".chroot", ".sql"}
-    return [p for p in OS_DIR.rglob("*") if p.is_file() and (p.suffix in suffixes or p.name == "Dockerfile")]
+    by_suffix = [p for p in OS_DIR.rglob("*") if p.is_file() and (p.suffix in suffixes or p.name == "Dockerfile")]
+    return [*by_suffix, *_live_config_components()]
 
 
 def test_image_sources_use_lf_line_endings() -> None:
@@ -194,9 +218,8 @@ def test_image_sources_use_lf_line_endings() -> None:
 
 
 def _shell_scripts() -> list[Path]:
-    return sorted(
-        p for p in OS_DIR.rglob("*") if p.is_file() and (p.suffix == ".sh" or p.name.endswith(".hook.chroot"))
-    )
+    by_name = [p for p in OS_DIR.rglob("*") if p.is_file() and (p.suffix == ".sh" or p.name.endswith(".hook.chroot"))]
+    return sorted([*by_name, *_live_config_components()])
 
 
 @pytest.mark.parametrize("script", _shell_scripts(), ids=lambda p: p.name)

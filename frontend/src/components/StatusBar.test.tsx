@@ -51,16 +51,10 @@ describe('StatusBar backend line', () => {
       'The interface hit an unexpected error. Retrying.',
     ],
     [
-      'unauthorized: token rejected',
-      { status: 'unauthorized', cause: 'rejected' },
-      'Access token rejected',
-      'Restart the interface to get a new one.',
-    ],
-    [
-      'unauthorized: no token',
-      { status: 'unauthorized', cause: 'no-token' },
-      'Access token missing',
-      'Restart the interface to get a new one.',
+      'unauthorized: no valid session',
+      { status: 'unauthorized' },
+      'No valid session',
+      'This window has no valid session with the assistant service. Restarting the session restores it.',
     ],
   ];
 
@@ -99,7 +93,7 @@ describe('StatusBar backend line', () => {
     });
 
     it('announces politely: the live regions are never assertive or switched off', () => {
-      render(bar({ status: 'unauthorized', cause: 'rejected' }));
+      render(bar({ status: 'unauthorized' }));
 
       for (const line of screen.getAllByRole('status')) {
         // No explicit aria-live means the role's own default, which is polite.
@@ -116,6 +110,24 @@ describe('StatusBar backend line', () => {
 
       expect(elsewhere).toHaveFocus();
     });
+  });
+});
+
+describe('StatusBar when there is no valid session', () => {
+  it('names the problem and the way back in plain words, without internals the person cannot act on', () => {
+    render(<StatusBar backend={{ status: 'unauthorized' }} browserOnline />);
+
+    const text = backendLine().textContent ?? '';
+    expect(text).toMatch(/no valid session/i);
+    expect(text).toMatch(/restart/i);
+    expect(text).not.toMatch(/token|url|address|link|http|\b401\b/i);
+  });
+
+  it('is shown as a refusal, not as a connection problem that is being retried', () => {
+    render(<StatusBar backend={{ status: 'unauthorized' }} browserOnline />);
+
+    expect(backendLine()).toHaveAttribute('data-tone', 'danger');
+    expect(backendLine().textContent).not.toMatch(/retrying/i);
   });
 });
 

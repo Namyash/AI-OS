@@ -39,11 +39,13 @@ function describeBackend(health: BackendHealth): StatusLine {
         detail: `${unreachableDetail(health)} Retrying.`,
       };
     case 'unauthorized':
+      // The backend answered 401. The session is installed by whatever started this window, so the way back is to
+      // restart that session; the page cannot repair it and does not retry.
       return {
         mark: 'barred',
         tone: 'danger',
-        label: health.cause === 'no-token' ? 'Access token missing' : 'Access token rejected',
-        detail: 'Restart the interface to get a new one.',
+        label: 'No valid session',
+        detail: 'This window has no valid session with the assistant service. Restarting the session restores it.',
       };
   }
 }

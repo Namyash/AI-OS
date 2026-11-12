@@ -22,6 +22,22 @@ function localImports(path: string, source: string): Array<{ specifier: string; 
     .map((specifier) => ({ specifier, target: posix.normalize(posix.join(posix.dirname(path), specifier)) }));
 }
 
+describe('the bundle boundary', () => {
+  it('has files to check (guards against checking nothing)', () => {
+    expect(files.length).toBeGreaterThan(10);
+  });
+
+  it('nothing under src/ imports from outside src/, so the build tooling and its development settings cannot reach the bundle', () => {
+    const violations = files.flatMap(({ path, source }) =>
+      localImports(path, source)
+        .filter(({ target }) => target.split('/')[0] !== 'src')
+        .map(({ specifier }) => `${path} imports ${specifier}`),
+    );
+
+    expect(violations).toEqual([]);
+  });
+});
+
 describe('layering', () => {
   it.each(Object.keys(MAY_IMPORT))('%s has files to check (guards against checking nothing)', (layer) => {
     expect(files.filter(({ path }) => path.startsWith(`src/${layer}/`)).length).toBeGreaterThan(0);

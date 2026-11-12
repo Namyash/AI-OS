@@ -1,0 +1,72 @@
+# pai-lint: root-justified: an installer partitions and formats a disk, opens a dm-crypt volume, mounts the target, copies the running root with its ownership and modes, runs chroot tools and installs a boot loader; none of that can be done by an account that is not root. Whoever controls the kernel command line and the attached devices already controls the machine, so the unit is a provisioning interface (like a preseed), not a new privilege; it only starts when the command line asks for it and a plan medium is attached. The sandbox below removes what the engine does not use (capabilities, kernel modules and tunables, namespaces, clock, hostname, logs, real-time scheduling, other users' processes, the network, the home directories) and keeps the engine's own safety rules (installer/, docs/architecture/INSTALLER_DESIGN.md) as the control over the one disk it may touch.
+# pai-lint: waive CapabilityBoundingSet: CAP_SYS_ADMIN is what mount(2), the device-mapper ioctls of cryptsetup and the partition-table re-read need; there is no narrower capability for them. The set still leaves out CAP_SYS_MODULE, CAP_SYS_BOOT, CAP_SYS_TIME, CAP_SYS_PTRACE, CAP_SYS_RAWIO, CAP_NET_ADMIN, CAP_NET_RAW, CAP_BPF, CAP_KILL and the rest. Listed, each for what it does: SYS_ADMIN (above); SYS_CHROOT (chroot into the target for update-initramfs, grub-install and the account setup); MKNOD (device nodes of the copied root); DAC_OVERRIDE, DAC_READ_SEARCH, FOWNER, FSETID, CHOWN (rsync and the chroot tools write files of other owners and set their modes); SETFCAP (rsync -X restores file capabilities such as the ones on ping); IPC_LOCK (cryptsetup locks the memory that holds key material); SETUID, SETGID (found on the first real install: apt-get purge of the live packages in the chroot drops to its _apt user and failed with "setgroups 65534 failed: Operation not permitted", and dpkg maintainer scripts switch accounts).
+# pai-lint: waive AmbientCapabilities: CAP_SETUID and CAP_SETGID only. Measured under the real unit sandbox (systemd 257): with NoNewPrivileges=yes, listing them in CapabilityBoundingSet is not enough, apt-get purge in the chroot still fails ("seteuid 42 failed", "setresuid: Operation not permitted") when it drops to its _apt user; making them ambient fixes it while NoNewPrivileges stays on, and removing NoNewPrivileges also fixes it but gives up a control the lint requires of root units. Nothing else needed ambient capabilities.
+# pai-lint: waive PrivateDevices: the engine opens the target disk and its partitions by their /dev nodes, and cryptsetup creates /dev/mapper entries through udev; a private /dev has neither.
+# pai-lint: waive ProtectKernelTunables: partitioning and formatting make the kernel and udev write the uevent and holder files under /sys and read /proc/sys/crypto; with these read-only the partition and mapping events of the target disk never fire.
+# pai-lint: waive ProtectKernelModules: the target is a copy of the running root, and this setting hides /usr/lib/modules in the unit's mount namespace, so rsync (one filesystem) would leave the kernel modules out of the installed system, which then could not boot (the initramfs is built from them).
+# pai-lint: waive RestrictSUIDSGID: the target is a copy of the running root, which contains setuid and setgid programs (mount, su, passwd, chage, ...); with this setting every chmod that sets such a bit fails, so the installed system would lack them or the copy would fail.
+# pai-lint: waive ProcSubset: the engine reads /proc/swaps (a swap area on the target disk is refused), /proc/partitions, /proc/devices and /proc/crypto, which ProcSubset=pid hides. ProtectProc=invisible still hides every other account's processes.
+# pai-lint: waive UMask: the engine writes the target's configuration files (hostname, fstab, crypttab, GRUB defaults) with the default mode; under UMask=0077 they would be 0600, unreadable for the non-root services of the installed system. The files that are secrets (the recovery key) are created with an explicit 0600 by the engine, not by the umask.
+# pai-lint: waive SystemCallFilter: chroot is in @privileged and mount in @mount, which the baseline removes or never allows, and rsync's chown, setfcap and mknod are in @privileged as well. The filter stays an allow list (@system-service plus @privileged, @resources, @mount and @sync) and denies, with EPERM instead of a kill, what no step needs: @module, @reboot, @swap, @raw-io, @cpu-emulation, @obsolete, @debug and @clock.
+[Unit]
+Description=Private AI OS unattended installer (plan on a PAI-PLAN medium)
+Documentation=file:///usr/lib/pai/install-auto.sh file:///opt/pai/installer/__main__.py
+# Starts only when the kernel command line asks for it (the install test harness does, and so does anyone provisioning a
+# machine from a plan medium); a normal boot, and a self-check boot, skip the unit at once. That the medium is attached
+# is decided by the script, which waits for udev: the by-label link may not exist yet when the unit is started.
+ConditionKernelCommandLine=pai.install=auto
+# After udev has processed the devices that exist at boot and the local filesystems are up. Ordering only: nothing
+# here pulls systemd-udev-settle.service in (it would delay every boot), the script settles udev itself.
+After=systemd-udevd.service systemd-udev-settle.service local-fs.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/pai
+# The label of the plan medium is the one argument; the script validates it and finds the device through udev.
+ExecStart=/usr/lib/pai/install-auto.sh PAI-PLAN
+Environment=PYTHONDONTWRITEBYTECODE=1
+# The engine's JSON-lines events and the script's own lines go to the journal and to the console: a person at the console
+# and the install test harness (tests/end_to_end) read progress from there. Neither prints the plan.
+StandardOutput=journal+console
+StandardError=journal+console
+SyslogIdentifier=pai-install-auto
+# No time limit and no restart: stopping an install half way leaves a half-written disk, and the engine bounds its own
+# steps and rolls back on a failure. A failed run stays failed (systemctl --failed) for the person to read.
+TimeoutStartSec=infinity
+# /run/pai-install holds the plan medium's mount point and the engine's own files (the recovery key); /run/cryptsetup is
+# cryptsetup's lock directory. Both are made, owned by root with mode 0700, and removed when the unit stops.
+RuntimeDirectory=pai-install pai-plan cryptsetup
+RuntimeDirectoryMode=0700
+# The target filesystems are mounted below one of these (ProtectSystem=strict leaves the rest of the tree read-only).
+ReadWritePaths=/run/pai-install /run/pai-plan /mnt
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_CHROOT CAP_MKNOD CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_FOWNER CAP_FSETID CAP_CHOWN CAP_SETFCAP CAP_IPC_LOCK CAP_SETUID CAP_SETGID
+AmbientCapabilities=CAP_SETUID CAP_SETGID
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=no
+ProtectKernelTunables=no
+ProtectKernelModules=no
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=all
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=no
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service @privileged @resources @mount @sync
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+UMask=0022
+
+[Install]
+WantedBy=multi-user.target

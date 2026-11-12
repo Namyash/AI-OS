@@ -9,7 +9,14 @@ The producer is os/security/rootfs/usr/lib/pai/security-selfcheck.sh, one line p
 A serial console is noisy: kernel messages, ANSI escapes and carriage returns surround (and sometimes cut into) the
 lines. Parsing therefore searches for the pattern inside each line instead of expecting clean lines, and the verdict
 logic trusts nothing that is missing: no summary line, a summary that disagrees with the lines seen, a run with no
-check at all, or a run that lacks one of REQUIRED_CHECKS is a failure.
+check at all, or a run that lacks one of the required checks is a failure.
+
+The required set depends on what was booted. A live session must report REQUIRED_CHECKS. An installed system
+(docs/architecture/INSTALLER_DESIGN.md) must report those and INSTALLED_ONLY_CHECKS besides: the root filesystem on an
+encrypted volume and nothing left of the live system. The script decides which it is from the running system and emits
+the installed-only checks only on an installed one, so a live boot that reports them, or an installed boot that does
+not,
+is a failure: either way the image and the harness disagree about what was booted.
 """
 
 from __future__ import annotations
@@ -24,8 +31,11 @@ RESULT_NAME = "RESULT"
 # before a check existed, or a script edited to drop one, would otherwise pass with whatever subset it still prints
 # (`RESULT PASS 1/1`). They cover the firewall policy (threat model invariant 5), the host-integration modules
 # (invariant 6), the kernel hardening values, the listening sockets, the core services, the guard that the
-# script examined the real system, and the backend service (running, unprivileged, loopback only, refusing anonymous
-# requests, answering an authenticated one, and sandboxed to within a measured exposure).
+# script examined the real system, the backend service (running, unprivileged, loopback only, refusing anonymous
+# requests, answering an authenticated one, and sandboxed to within a measured exposure), the kiosk (running as its
+# own account with Chromium below it, and reporting through its readiness file that the shell rendered and the backend
+# is connected), that no process holds a live credential in its argument list or environment, and that no account has a
+# password that ships in the image.
 # test_selfcheck_wiring.py keeps this list equal to the CHECKS table of
 # os/security/rootfs/usr/lib/pai/security-selfcheck.sh, so a check can be neither added nor dropped silently.
 REQUIRED_CHECKS: tuple[str, ...] = (
@@ -41,6 +51,17 @@ REQUIRED_CHECKS: tuple[str, ...] = (
     "backend-refuses-anonymous",
     "backend-health",
     "backend-sandbox-exposure",
+    "kiosk-active",
+    "kiosk-ready",
+    "no-secret-in-process-state",
+    "no-default-credentials",
+)
+
+# What an installed system must report in addition (the INSTALLED_CHECKS table of the same script, which
+# test_selfcheck_wiring.py keeps equal to this tuple). A live session reports none of them.
+INSTALLED_ONLY_CHECKS: tuple[str, ...] = (
+    "root-encrypted",
+    "no-live-remnants",
 )
 
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[@-Z\\-_]")
@@ -57,21 +78,36 @@ class CheckResult:
     detail: str
 
 
+def strip_terminal_escapes(text: str) -> str:
+    """`text` without ANSI escape sequences: what a serial console adds around and inside the guest's own lines."""
+    return _ANSI_ESCAPE.sub("", text)
+
+
 def parse_selfcheck(text: str) -> list[CheckResult]:
     """Every well-formed PAI-SELFCHECK line in `text`, in order. Lines that are cut or garbled are not returned."""
-    clean = _ANSI_ESCAPE.sub("", text)
+    clean = strip_terminal_escapes(text)
     return [
         CheckResult(match["name"], match["status"] == "PASS", match["detail"].strip())
         for match in _LINE.finditer(clean)
     ]
 
 
-def selfcheck_problems(results: Sequence[CheckResult], required: Sequence[str] = REQUIRED_CHECKS) -> list[str]:
+def required_checks(*, installed: bool) -> tuple[str, ...]:
+    """The checks a boot must report: REQUIRED_CHECKS for a live session, plus INSTALLED_ONLY_CHECKS when installed."""
+    return (*REQUIRED_CHECKS, *INSTALLED_ONLY_CHECKS) if installed else REQUIRED_CHECKS
+
+
+def selfcheck_problems(
+    results: Sequence[CheckResult], required: Sequence[str] | None = None, *, installed: bool = False
+) -> list[str]:
     """Why these results do not prove a clean self-check; an empty list means all passed and the run completed.
 
-    `required` names the checks that must appear in the output (default: REQUIRED_CHECKS). Extra checks the image
-    reports beyond them are judged like any other.
+    `installed` says what was booted (default: a live session). `required` names the checks that must appear in the
+    output; the default is required_checks(installed=installed). Extra checks the image reports beyond them are
+    judged like any other, except that the installed-only checks on a live boot are a problem of their own.
     """
+    if required is None:
+        required = required_checks(installed=installed)
     # Identical repeats (a line echoed twice on the console) are harmless; conflicting repeats are reported below.
     unique = list(dict.fromkeys(results))
     checks = [result for result in unique if result.name != RESULT_NAME]
@@ -94,6 +130,11 @@ def selfcheck_problems(results: Sequence[CheckResult], required: Sequence[str] =
         problems.append(
             f"required check(s) missing from the output: {', '.join(missing)} "
             "(the image's self-check is older than this harness expects, or its output was lost)"
+        )
+    if not installed and (stray := [name for name in names if name in INSTALLED_ONLY_CHECKS]):
+        problems.append(
+            f"installed-only check(s) reported by a live boot: {', '.join(stray)} "
+            "(the self-check took the system for an installed one, or this boot was not a live session)"
         )
     problems.extend(f"conflicting results for check {name}" for name in dict.fromkeys(names) if names.count(name) > 1)
     problems.extend(f"{check.name} FAILED: {check.detail}" for check in checks if not check.passed)

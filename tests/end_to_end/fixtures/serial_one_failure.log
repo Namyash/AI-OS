@@ -1,10 +1,10 @@
 [pai-e2e] kernel=/live/vmlinuz-6.12.115+deb13.1-amd64 initrd=/live/initrd.img-6.12.115+deb13.1-amd64
-[pai-e2e] exec qemu-system-x86_64 -accel tcg -machine pc -cpu max -m 2048 -smp 2 -nographic -monitor none -serial stdio -no-reboot -kernel /work/kernel -initrd /work/initrd -append 'boot=live components console=ttyS0 pai.selfcheck=1' -drive file=/iso/boot.iso,media=cdrom,readonly=on,format=raw -netdev user,id=net0,restrict=on -device virtio-net-pci,netdev=net0,romfile= -device virtio-rng-pci
+[pai-e2e] exec qemu-system-x86_64 -accel tcg -machine pc -cpu max -m 3072 -smp 2 -nographic -monitor none -serial stdio -no-reboot -kernel /work/kernel -initrd /work/initrd -append 'boot=live components console=ttyS0 pai.selfcheck=1 panic=-1' -drive file=/iso/boot.iso,media=cdrom,readonly=on,format=raw -netdev user,id=net0,restrict=on -device virtio-net-pci,netdev=net0,romfile= -device virtio-rng-pci
 <ESC>c<ESC>[?7l<ESC>[2J<ESC>[0mSeaBIOS (version 1.16.3-debian-1.16.3-2)
 Booting from ROM...
-Probing EDD (edd=off to disable)... o<ESC>c<ESC>[?7l<ESC>[2J<ESC>[0mk
-[    0.000000] Linux version 6.12.115+deb13.1-amd64 (debian-kernel@lists.debian.org) (x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0, GNU ld (GNU Binutils for Debian) 2.44) #1 SMP PREEMPT_DYNAMIC Debian 6.12.115-2 (2026-11-01)
-[    0.000000] Command line: boot=live components console=ttyS0 pai.selfcheck=1
+Probing EDD (edd=off to disable)... ok
+<ESC>c<ESC>[?7l<ESC>[2J[    0.000000] Linux version 6.12.115+deb13.1-amd64 (debian-kernel@lists.debian.org) (x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0, GNU ld (GNU Binutils for Debian) 2.44) #1 SMP PREEMPT_DYNAMIC Debian 6.12.115-2 (2026-11-01)
+[    0.000000] Command line: boot=live components console=ttyS0 pai.selfcheck=1 panic=-1
 [    0.000000] BIOS-provided physical RAM map:
 [    0.000000] BIOS-e820: [mem 0x0000000000000000-0x000000000009fbff] usable
 [    0.000000] BIOS-e820: [mem 0x000000000009fc00-0x000000000009ffff] reserved
@@ -18,73 +18,57 @@ Probing EDD (edd=off to disable)... o<ESC>c<ESC>[?7l<ESC>[2J<ESC>[0mk
 [    0.000000] SMBIOS 2.8 present.
 [    0.000000] DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.3-debian-1.16.3-2 04/01/2014
 [    0.000000] DMI: Memory slots populated: 1/1
-[    0.000000] tsc: Fast TSC calibration using PIT
-[    0.000000] tsc: Detected 2495.698 MHz processor
-[    0.021116] last_pfn = 0x7ffe0 max_arch_pfn = 0x10000000000
-[    0.022258] MTRR map: 4 entries (3 fixed + 1 variable; max 19), built from 8 variable MTRRs
-[    0.022688] x86/PAT: Configuration [0-7]: WB  WC  UC- UC  WB  WP  UC- WT  
-[    0.048151] found SMP MP-table at [mem 0x000f5470-0x000f547f]
-[    0.050947] Using GB pages for direct mapping
-[    0.060112] RAMDISK: [mem 0x7d6ae000-0x7ffdffff]
-[    0.064695] ACPI: Early table checksum verification disabled
-[    0.065415] ACPI: RSDP 0x00000000000F52A0 000014 (v00 BOCHS )
-[    0.065902] ACPI: RSDT 0x000000007FFE2396 000034 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
-[    0.067184] ACPI: FACP 0x000000007FFE2242 000074 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
-[    0.068442] ACPI: DSDT 0x000000007FFE0040 002202 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
-[    0.068640] ACPI: FACS 0x000000007FFE0000 000040
-[    0.068736] ACPI: APIC 0x000000007FFE22B6 000080 (v03 BOCHS  BXPC     00000001 BXPC 00000001)
-[    0.068775] ACPI: HPET 0x000000007FFE2336 000038 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
 ...
-
-[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39mcron.service<ESC>[0m - Regular background program processing daemon.
-
-         Starting <ESC>[0;1;39mdbus.service<ESC>[0m - D-Bus System Message Bus...
-
-         Starting <ESC>[0;1;39me2scrub_reap.service<ESC>[0m - Re…ne ext4 Metadata Check Snapshots...
-
-         Starting <ESC>[0;1;39msystemd-logind.service<ESC>[0m - User Login Management...
-
-         Starting <ESC>[0;1;39msystemd-user-sessions.service<ESC>[0m - Permit User Sessions...
-
-[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39mdbus.service<ESC>[0m - D-Bus System Message Bus.
-
-[<ESC>[0;32m  OK  <ESC>[0m] Finished <ESC>[0;1;39msystemd-user-sessions.service<ESC>[0m - Permit User Sessions.
-
-[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39mgetty@tty1.service<ESC>[0m - Getty on tty1.
-
-[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39mserial-getty@ttyS0.service<ESC>[0m - Serial Getty on ttyS0.
-
-[<ESC>[0;32m  OK  <ESC>[0m] Reached target <ESC>[0;1;39mgetty.target<ESC>[0m - Login Prompts.
-
-[<ESC>[0;32m  OK  <ESC>[0m] Finished <ESC>[0;1;39me2scrub_reap.service<ESC>[0m - Re…line ext4 Metadata Check Snapshots.
-
-[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39msystemd-logind.service<ESC>[0m - User Login Management.
-
-[<ESC>[0;32m  OK  <ESC>[0m] Reached target <ESC>[0;1;39mmulti-user.target<ESC>[0m - Multi-User System.
-
-         Starting <ESC>[0;1;39mpai-selfcheck.service<ESC>[0m - P…e AI OS boot security self-check...
-
-[  100.455390] security-selfcheck.sh[903]: PAI-SELFCHECK|live-root|PASS|examining the live /proc, /etc and tools
-<ESC>[!p<ESC>]104<ESC>[?7h<ESC>[6n<ESC>[32766;32766H<ESC>[6n<ESC>[!p<ESC>]104<ESC>[?7h<ESC>[6n<ESC>[32766;32766H<ESC>[6n
-
+<ESC>[K[<ESC>[0;32m  OK  <ESC>[0m] Reached target <ESC>[0;1;39mbasic.target<ESC>[0m - Basic System.<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39mcron.service<ESC>[0m - Regular background program processing daemon.<U+000D>
+         Starting <ESC>[0;1;39mdbus.service<ESC>[0m - D-Bus System Message Bus...<U+000D>
+         Starting <ESC>[0;1;39me2scrub_reap.service<ESC>[0m - Re…ne ext4 Metadata Check Snapshots...<U+000D>
+         Starting <ESC>[0;1;39mpai-backend.service<ESC>[0m - Private AI OS backend...<U+000D>
+         Starting <ESC>[0;1;39mpai-kiosk.service<ESC>[0m - Private AI OS kiosk (cage and Chromium on tty1)...<U+000D>
+         Starting <ESC>[0;1;39msystemd-logind.service<ESC>[0m - User Login Management...<U+000D>
+         Starting <ESC>[0;1;39msystemd-user-sessions.service<ESC>[0m - Permit User Sessions...<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39mdbus.service<ESC>[0m - D-Bus System Message Bus.<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Finished <ESC>[0;1;39msystemd-user-sessions.service<ESC>[0m - Permit User Sessions.<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39mserial-getty@ttyS0.service<ESC>[0m - Serial Getty on ttyS0.<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Reached target <ESC>[0;1;39mgetty.target<ESC>[0m - Login Prompts.<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39mpai-backend.service<ESC>[0m - Private AI OS backend.<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Finished <ESC>[0;1;39me2scrub_reap.service<ESC>[0m - Re…line ext4 Metadata Check Snapshots.<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39msystemd-logind.service<ESC>[0m - User Login Management.<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39mpai-kiosk.service<ESC>[0m - Private AI OS kiosk (cage and Chromium on tty1).<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Reached target <ESC>[0;1;39mmulti-user.target<ESC>[0m - Multi-User System.<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Reached target <ESC>[0;1;39mgraphical.target<ESC>[0m - Graphical Interface.<U+000D>
+         Starting <ESC>[0;1;39mpai-selfcheck.service<ESC>[0m - P…e AI OS boot security self-check...<U+000D>
+<ESC>[!p<ESC>]104<U+0007><ESC>[?7h<ESC>[6n<ESC>[32766;32766H<ESC>[6n<ESC>[!p<ESC>]104<U+0007><ESC>[?7h<ESC>[6n<ESC>[32766;32766H<ESC>[6n<U+000D>
 Debian GNU/Linux 13 debian ttyS0
 
-debian login: [  107.171274] security-selfcheck.sh[903]: PAI-SELFCHECK|nft-default-drop|PASS|filter base chains with policy drop: input=1, forward=1, output=1
-[  107.922455] security-selfcheck.sh[903]: PAI-SELFCHECK|modules-blocked|PASS|blocked and not loaded: vboxsf
-[  108.149810] security-selfcheck.sh[903]: PAI-SELFCHECK|sysctl-live|PASS|18 settings match the live kernel
-[  109.736107] security-selfcheck.sh[903]: PAI-SELFCHECK|no-external-listeners|FAIL|listening beyond loopback: tcp 0.0.0.0:5355, tcp6 [::]:5355, udp 0.0.0.0:5355, udp6 [::]:5355
-[  110.415382] security-selfcheck.sh[903]: PAI-SELFCHECK|units-active|PASS|active: nftables.service systemd-networkd.service
-[  110.424409] security-selfcheck.sh[903]: PAI-SELFCHECK|RESULT|FAIL|5/6
-[  112.549837] systemd-shutdown[1]: Syncing filesystems and block devices.
-[  112.562842] systemd-shutdown[1]: Sending SIGTERM to remaining processes...
-[  112.836362] systemd-journald[476]: Received SIGTERM from PID 1 (systemd-shutdow).
-[  113.347834] systemd-shutdown[1]: Sending SIGKILL to remaining processes...
-[  113.441744] systemd-shutdown[1]: Unmounting file systems.
-[  113.462561] (sd-umount)[960]: Unmounting '/run/credentials/getty@tty1.service'.
-[  113.480435] (sd-umount)[961]: Unmounting '/run/credentials/serial-getty@ttyS0.service'.
-[  113.492989] (sd-umount)[962]: Unmounting '/run/credentials/systemd-networkd.service'.
-[  113.530269] (sd-umount)[964]: Unmounting '/tmp'.
-[  113.546295] (sd-umount)[965]: Unmounting '/run/credentials/systemd-resolved.service'.
-[  113.560883] (sd-umount)[966]: Unmounting '/run/credentials/systemd-journald.service'.
-[  113.573874] (sd-umount)[967]: Unmounting '/run/lock'.
-[  113.586038] (sd-remount)[968]: Remounting '/' read-only with options 'lowerdir=/run/live/rootfs/filesystem.squashfs/,upperdir=/run/live/overlay/rw,workdir=/run/live/overlay/work,redirect_dir=on,uuid=on'.
+debian login: [ 218.152670] security-selfcheck.sh[833]: PAI-SELFCHECK|live-root|PASS|examining the live /proc, /etc and tools
+[ 218.162987] security-selfcheck.sh[833]: PAI-SELFCHECK|backend-active|PASS|accepts connections on 127.0.0.1:8765 and has published its token file
+[ 219.331563] security-selfcheck.sh[833]: PAI-SELFCHECK|nft-default-drop|PASS|filter base chains with policy drop: input=1, forward=1, output=1; no unconditional accept; 3 configured base chains loaded as declared
+[ 219.473062] security-selfcheck.sh[833]: PAI-SELFCHECK|modules-blocked|PASS|blocked and not loaded: vboxsf
+[ 219.548017] security-selfcheck.sh[833]: PAI-SELFCHECK|sysctl-live|PASS|18 settings match the live kernel
+[ 220.306962] security-selfcheck.sh[833]: PAI-SELFCHECK|no-external-listeners|FAIL|listening beyond loopback: tcp 0.0.0.0:5355, tcp6 [::]:5355, udp 0.0.0.0:5355, udp6 [::]:5355
+[ 220.464023] security-selfcheck.sh[833]: PAI-SELFCHECK|units-active|PASS|active: nftables.service systemd-networkd.service
+[ 220.538655] security-selfcheck.sh[833]: PAI-SELFCHECK|backend-unprivileged|PASS|pid 791 runs as pai (uid 989) with no capabilities and no_new_privs
+[ 220.548771] security-selfcheck.sh[833]: PAI-SELFCHECK|backend-loopback-only|PASS|listens on 127.0.0.1:8765 and nowhere else on port 8765
+[ 220.562796] security-selfcheck.sh[833]: PAI-SELFCHECK|backend-refuses-anonymous|PASS|GET /health without credentials is refused with 401
+[ 220.574932] security-selfcheck.sh[833]: PAI-SELFCHECK|backend-health|PASS|authenticated GET /health returned 200: schema 1, version 0.0.1
+[ 220.754161] security-selfcheck.sh[833]: PAI-SELFCHECK|backend-sandbox-exposure|PASS|pai-backend.service exposure is 1.1, within the limit 1.2
+[ 220.766161] security-selfcheck.sh[833]: PAI-SELFCHECK|kiosk-active|PASS|pid 846 of pai-kiosk.service runs as pai-ui (uid 987); 11 chromium process(es) descend from pid 846
+[ 220.778161] security-selfcheck.sh[833]: PAI-SELFCHECK|kiosk-ready|PASS|/run/pai-ui/ready says ready: shell rendered, status bar 'Backend connected Version 0.0.1'
+[ 220.790161] security-selfcheck.sh[833]: PAI-SELFCHECK|no-secret-in-process-state|PASS|examined the argument list and environment of 63 processes: 0 credential-shaped strings, none accepted by the backend as a bearer token or a session cookie, and the bearer token is in none of them
+[ 220.802161] security-selfcheck.sh[833]: PAI-SELFCHECK|no-default-credentials|PASS|24 accounts in /etc/shadow, every password field locked or disabled; mode 640
+[ 220.816504] security-selfcheck.sh[833]: PAI-SELFCHECK|RESULT|FAIL|15/16
+[ 221.492115] systemd-shutdown[1]: Syncing filesystems and block devices.
+[ 221.497078] systemd-shutdown[1]: Sending SIGTERM to remaining processes...
+[ 221.602398] systemd-journald[465]: Received SIGTERM from PID 1 (systemd-shutdow).
+[ 221.815317] systemd-shutdown[1]: Sending SIGKILL to remaining processes...
+[ 221.868665] systemd-shutdown[1]: Unmounting file systems.
+[ 221.887724] (sd-umount)[907]: Unmounting '/run/credentials/serial-getty@ttyS0.service'.
+[ 221.897439] (sd-umount)[908]: Unmounting '/run/credentials/systemd-networkd.service'.
+[ 221.904950] (sd-umount)[909]: Unmounting '/tmp'.
+[ 221.913244] (sd-umount)[910]: Unmounting '/run/credentials/systemd-resolved.service'.
+[ 221.920172] (sd-umount)[911]: Unmounting '/run/credentials/systemd-journald.service'.
+[ 221.927986] (sd-umount)[912]: Unmounting '/run/lock'.
+[ 222.117369] ACPI: PM: Preparing to enter system sleep state S5
+[ 222.121396] kvm: exiting hardware virtualization
+[ 222.122330] reboot: Power down

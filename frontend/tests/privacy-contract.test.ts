@@ -6,13 +6,21 @@ import { applicationFiles, mentionsRemoteResource, root, withoutComments } from 
 
 /**
  * Static guards for the privacy contract in docs/development/FRONTEND.md. They read the source, so a change that
- * would let the UI reach beyond its own origin or persist the access token fails here, not in review.
+ * would let the UI reach beyond its own origin, store anything in the browser or handle a credential itself fails
+ * here, not in review.
  */
 const files = applicationFiles();
 
 /** Ways for script to talk to the network. Only the API client may use them. */
 const NETWORK_API =
   /\bfetch\s*\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon|serviceWorker|importScripts|\bnew\s+Image\s*\(/;
+
+/**
+ * Ways for the page to take part in authentication itself: setting an Authorization header, or reading the URL
+ * fragment or query string where a secret could be handed over. The session cookie is HttpOnly and installed by the
+ * kiosk launcher, so the page has no secret to read, send or keep.
+ */
+const CREDENTIAL_HANDLING = /authorization|\bbearer\b|location\.(?:hash|search)|URLSearchParams/i;
 
 describe('application source', () => {
   it('is found (guards against these checks silently scanning nothing)', () => {
@@ -28,10 +36,16 @@ describe('application source', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('never persists anything in the browser: no web storage, cookies or IndexedDB (the token lives in memory only)', () => {
+  it('never persists anything in the browser: no web storage, cookies or IndexedDB', () => {
     const offenders = files
       .filter(({ code }) => /localStorage|sessionStorage|document\.cookie|indexedDB/.test(code))
       .map(({ path }) => path);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('handles no credential: no Authorization header, bearer value, or reading of the URL fragment or query', () => {
+    const offenders = files.filter(({ code }) => CREDENTIAL_HANDLING.test(code)).map(({ path }) => path);
 
     expect(offenders).toEqual([]);
   });
@@ -88,6 +102,22 @@ describe('the guards catch what they are for', () => {
     ['a socket', "new WebSocket('/x')"],
   ])('treats %s as network I/O', (_name, text) => {
     expect(NETWORK_API.test(withoutComments(text, 'x.ts'))).toBe(true);
+  });
+
+  it.each([
+    ['an Authorization header', "fetch('/x', { headers: { Authorization: 'Bearer abc' } })"],
+    ['a lower-case authorization header', "headers.set('authorization', value)"],
+    ['a value read from the URL fragment', 'export const value = window.location.hash.slice(1);'],
+    ['a value read from the query string', 'export const value = location.search;'],
+    ['query parsing', "export const params = new URLSearchParams('a=b');"],
+  ])('treats %s as credential handling', (_name, text) => {
+    expect(CREDENTIAL_HANDLING.test(withoutComments(text, 'x.ts'))).toBe(true);
+  });
+
+  it('lets a comment name what the code avoids', () => {
+    const text = '// the page sends no Authorization header\nexport const a = 1;';
+
+    expect(CREDENTIAL_HANDLING.test(withoutComments(text, 'x.ts'))).toBe(false);
   });
 });
 

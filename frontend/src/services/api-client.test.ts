@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HEALTH_BODY, hangingFetch, jsonResponse, makeClient, TEST_TOKEN } from '../test/fakes';
+import { HEALTH_BODY, hangingFetch, jsonResponse, makeClient, unauthorizedResponse } from '../test/fakes';
 import type { FetchLike } from './api-client';
 import { ApiError, type ApiErrorKind } from './api-error';
 import { isHealthResponse } from './health';
@@ -31,7 +31,7 @@ function lastCall(fetch: FetchMock): { url: string; init: RequestInit } {
 }
 
 describe('ApiClient.get', () => {
-  it('sends GET with the bearer token in the Authorization header and returns the validated body', async () => {
+  it('sends a plain GET to the page origin and returns the validated body', async () => {
     const fetch = respondWith(() => jsonResponse(HEALTH_BODY));
     const client = makeClient(fetch);
 
@@ -40,31 +40,27 @@ describe('ApiClient.get', () => {
     const { url, init } = lastCall(fetch);
     expect(url).toBe('http://localhost:3000/health');
     expect(init.method).toBe('GET');
-    expect(init.headers).toMatchObject({ Authorization: `Bearer ${TEST_TOKEN}` });
   });
 
-  it('never puts the token in the URL or in any request option other than the Authorization header', async () => {
+  it('holds no credential of its own: no Authorization header and nothing in the URL', async () => {
     const fetch = respondWith(() => jsonResponse(HEALTH_BODY));
 
     await makeClient(fetch).get('/health', isHealthResponse);
 
     const { url, init } = lastCall(fetch);
-    const { headers, signal: _signal, ...rest } = init;
-    expect(url).not.toContain(TEST_TOKEN);
+    // The session cookie is attached by the browser, not by this code, so the only header is the media type asked for.
+    expect(init.headers).toEqual({ Accept: 'application/json' });
     expect(new URL(url).search).toBe('');
-    expect(JSON.stringify(rest)).not.toContain(TEST_TOKEN);
-    expect(Object.entries(headers ?? {}).filter(([, value]) => String(value).includes(TEST_TOKEN))).toEqual([
-      ['Authorization', `Bearer ${TEST_TOKEN}`],
-    ]);
+    expect(new URL(url).hash).toBe('');
   });
 
-  it('sends no cookies, caches nothing, sends no referrer and refuses redirects', async () => {
+  it('lets the browser attach the session cookie to this origin only, caches nothing, sends no referrer and refuses redirects', async () => {
     const fetch = respondWith(() => jsonResponse(HEALTH_BODY));
 
     await makeClient(fetch).get('/health', isHealthResponse);
 
     expect(lastCall(fetch).init).toMatchObject({
-      credentials: 'omit',
+      credentials: 'same-origin',
       cache: 'no-store',
       redirect: 'error',
       referrerPolicy: 'no-referrer',
@@ -77,7 +73,7 @@ describe('ApiClient.get', () => {
     );
     const replies: Array<() => Response | Promise<Response>> = [
       () => jsonResponse(HEALTH_BODY),
-      () => jsonResponse({ error: { code: 'forbidden', message: 'No.' } }, 401),
+      unauthorizedResponse,
       () => jsonResponse({ error: { code: 'boom', message: 'Broke.' } }, 500),
       () => new Response('not json', { status: 200 }),
       () => Promise.reject(new TypeError('Failed to fetch')),
@@ -94,47 +90,13 @@ describe('ApiClient.get', () => {
     }
   });
 
-  it('keeps the token out of every error it raises', async () => {
-    const replies: Array<() => Response | Promise<Response>> = [
-      () => jsonResponse({ error: { code: 'forbidden', message: 'No.' } }, 401),
-      () => jsonResponse({ error: { code: 'boom', message: 'Broke.' } }, 500),
-      () => new Response('not json', { status: 200 }),
-      () => jsonResponse({ unexpected: true }),
-      () => Promise.reject(new TypeError(`Failed to fetch`)),
-    ];
-
-    for (const reply of replies) {
-      const error = await failureOf(makeClient(respondWith(reply)).get('/health', isHealthResponse));
-      expect(`${error.name} ${error.message} ${error.code} ${error.stack}`).not.toContain(TEST_TOKEN);
-    }
-  });
-
-  it('does not expose the token through serialisation or inspection of the client', () => {
-    const client = makeClient(respondWith(() => jsonResponse(HEALTH_BODY)));
-
-    // The token sits in a private field: no own property, enumerable or not, can carry it to a logger or devtools.
-    expect(Object.getOwnPropertyNames(client)).toEqual([]);
-    expect(Object.getOwnPropertySymbols(client)).toEqual([]);
-    expect(JSON.stringify(client)).toBe('{}');
-    expect(String(client)).not.toContain(TEST_TOKEN);
-  });
-
-  it('refuses to send anything when the page has no token', async () => {
-    const fetch = respondWith(() => jsonResponse(HEALTH_BODY));
-
-    const error = await failureOf(makeClient(fetch, { token: null }).get('/health', isHealthResponse));
-
-    expect(error.kind).toBe('no-token');
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
   it.each([
     ['a protocol-relative URL', '//evil.example/health'],
     ['an absolute URL', 'https://evil.example/health'],
     ['a backslash host', '/\\evil.example/health'],
     ['a look-alike host', 'http://localhost:3000.evil.example/health'],
     ['another port on the same host', 'http://localhost:9999/health'],
-  ])('refuses %s because the token must only reach the origin that served the page', async (_name, path) => {
+  ])('refuses %s because the UI only calls the origin that served it', async (_name, path) => {
     const fetch = respondWith(() => jsonResponse(HEALTH_BODY));
 
     await expect(makeClient(fetch).get(path, isHealthResponse)).rejects.toThrow(TypeError);
@@ -143,11 +105,17 @@ describe('ApiClient.get', () => {
 
   describe('error mapping', () => {
     it('maps 401 to "unauthorized" and keeps the backend error code', async () => {
-      const fetch = respondWith(() => jsonResponse({ error: { code: 'invalid_token', message: 'Bad token.' } }, 401));
+      const error = await failureOf(makeClient(respondWith(unauthorizedResponse)).get('/health', isHealthResponse));
 
-      const error = await failureOf(makeClient(fetch).get('/health', isHealthResponse));
+      expect(error).toMatchObject({ kind: 'unauthorized', status: 401, code: 'unauthorized' });
+    });
 
-      expect(error).toMatchObject({ kind: 'unauthorized', status: 401, code: 'invalid_token' });
+    it('describes a 401 as a missing session, in its own words rather than the backend text', async () => {
+      const error = await failureOf(makeClient(respondWith(unauthorizedResponse)).get('/health', isHealthResponse));
+
+      expect(error.message).toMatch(/no valid session/);
+      expect(error.message).not.toMatch(/token|url|address/i);
+      expect(error.message).not.toContain('Authentication is required.');
     });
 
     it('maps 401 without a usable body to "unauthorized" too', async () => {

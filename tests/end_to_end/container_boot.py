@@ -30,6 +30,11 @@ from pathlib import Path
 # in an initramfs shell for input that never comes, and the run only ends at the overall timeout.
 KERNEL_ARGS = "boot=live components console=ttyS0 pai.selfcheck=1 panic=-1"
 
+# Words a run may add after KERNEL_ARGS (PAI_BOOT_EXTRA_ARGS on the host side), for example to have the guest print its
+# journal on the console while debugging an image. A kernel command line is one line of plain text: no control character
+# can be in it, and it is bounded so a typo cannot hand the guest a page of text.
+MAX_EXTRA_KERNEL_ARGS_LENGTH = 512
+
 QEMU_BINARY = "qemu-system-x86_64"
 WORK_DIR = Path("/work")
 
@@ -100,10 +105,20 @@ def select_boot_files(paths: Iterable[str]) -> BootFiles:
     return BootFiles(kernel=kernels[best], initrd=initrds[best])
 
 
-def qemu_command(
-    *, kernel: Path, initrd: Path, iso: Path, memory_mib: int, cpus: int, kernel_args: str = KERNEL_ARGS
-) -> list[str]:
-    """QEMU command line: software emulation, serial console on stdio, ISO as a read-only CD-ROM, restricted NIC."""
+def validate_extra_kernel_args(text: str) -> str:
+    """`text` as the extra kernel words to append: printable ASCII only, runs of spaces made single, at most
+    MAX_EXTRA_KERNEL_ARGS_LENGTH characters. Raises ValueError saying what is wrong, never echoing a control char."""
+    if bad := [ch for ch in text if not (ch.isascii() and ch.isprintable())]:
+        raise ValueError(f"contains {len(bad)} character(s) that are not printable ASCII (no newline, tab or escape)")
+    words = " ".join(text.split())
+    if len(words) > MAX_EXTRA_KERNEL_ARGS_LENGTH:
+        raise ValueError(f"is {len(words)} characters long, at most {MAX_EXTRA_KERNEL_ARGS_LENGTH} are allowed")
+    return words
+
+
+def machine_options(memory_mib: int, cpus: int) -> list[str]:
+    """The emulated machine every boot of the tests uses: software emulation, the serial console on stdio, no
+    monitor."""
     return [
         QEMU_BINARY,
         "-accel", "tcg",  # no hypervisor on the dev machine; see docs/development/BOOT_TESTING.md
@@ -115,15 +130,45 @@ def qemu_command(
         "-monitor", "none",
         "-serial", "stdio",
         "-no-reboot",  # a guest reboot ends the run instead of looping through boots
-        "-kernel", kernel.as_posix(),
-        "-initrd", initrd.as_posix(),
-        "-append", kernel_args,
-        # live-boot searches the block devices for the squashfs; a read-only CD-ROM is what a real ISO boot looks like.
-        "-drive", f"file={iso.as_posix()},media=cdrom,readonly=on,format=raw",
+    ]  # fmt: skip
+
+
+def device_options() -> list[str]:
+    """The devices every boot gets besides its disks: a user-mode NIC with no route out, and a random-number source."""
+    return [
         # User-mode networking: the guest gets DHCP from QEMU, restrict=on cuts every route to the outside.
         "-netdev", "user,id=net0,restrict=on",
         "-device", "virtio-net-pci,netdev=net0,romfile=",
         "-device", "virtio-rng-pci",
+    ]  # fmt: skip
+
+
+def qemu_command(
+    *,
+    kernel: Path,
+    initrd: Path,
+    iso: Path,
+    memory_mib: int,
+    cpus: int,
+    kernel_args: str = KERNEL_ARGS,
+    extra_kernel_args: str = "",
+    extra_args: Sequence[str] = (),
+) -> list[str]:
+    """QEMU command line: software emulation, serial console on stdio, ISO as a read-only CD-ROM, restricted NIC.
+
+    `extra_kernel_args` (validated) goes after `kernel_args`, so the harness's own words stay first. `extra_args` are
+    more QEMU options (more disks, for the install test), placed after the ISO and before the devices.
+    """
+    extra = validate_extra_kernel_args(extra_kernel_args)
+    return [
+        *machine_options(memory_mib, cpus),
+        "-kernel", kernel.as_posix(),
+        "-initrd", initrd.as_posix(),
+        "-append", f"{kernel_args} {extra}" if extra else kernel_args,
+        # live-boot searches the block devices for the squashfs; a read-only CD-ROM is what a real ISO boot looks like.
+        "-drive", f"file={iso.as_posix()},media=cdrom,readonly=on,format=raw",
+        *extra_args,
+        *device_options(),
     ]  # fmt: skip
 
 
@@ -144,6 +189,13 @@ def extract_iso_file(iso: Path, iso_path: str, destination: Path) -> None:
         raise RuntimeError(f"xorriso could not extract {iso_path}: {result.stderr.strip()[-500:]}")
 
 
+def _extra_kernel_args(text: str) -> str:
+    try:
+        return validate_extra_kernel_args(text)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(str(error)) from None
+
+
 def _positive_int(text: str) -> int:
     value = int(text)
     if value < 1:
@@ -158,6 +210,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("iso", type=Path)
     parser.add_argument("--memory-mib", type=_positive_int, required=True)
     parser.add_argument("--cpus", type=_positive_int, required=True)
+    parser.add_argument("--extra-kernel-args", type=_extra_kernel_args, default="")
     args = parser.parse_args(argv)
 
     try:
@@ -170,7 +223,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     print(f"[pai-e2e] kernel={boot_files.kernel} initrd={boot_files.initrd}", flush=True)
-    command = qemu_command(kernel=kernel, initrd=initrd, iso=args.iso, memory_mib=args.memory_mib, cpus=args.cpus)
+    command = qemu_command(
+        kernel=kernel,
+        initrd=initrd,
+        iso=args.iso,
+        memory_mib=args.memory_mib,
+        cpus=args.cpus,
+        extra_kernel_args=args.extra_kernel_args,
+    )
     print(f"[pai-e2e] exec {shlex.join(command)}", flush=True)
     os.execvp(command[0], command)  # noqa: S606 - replaces this process: signals and the exit status are QEMU's own
 

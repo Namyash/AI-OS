@@ -1,0 +1,74 @@
+<ESC>c<ESC>[?7l<ESC>[2J<ESC>[0mSeaBIOS (version 1.16.3-debian-1.16.3-2)
+Booting from Hard Disk...
+Probing EDD (edd=off to disable)... ok
+<ESC>c<ESC>[?7l<ESC>[2J[    0.000000] Linux version 6.12.115+deb13.1-amd64 (debian-kernel@lists.debian.org) (x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0, GNU ld (GNU Binutils for Debian) 2.44) #1 SMP PREEMPT_DYNAMIC Debian 6.12.115-2 (2026-11-01)
+[    0.000000] Command line: root=/dev/mapper/cryptroot ro console=ttyS0 pai.selfcheck=1 panic=-1
+[    0.000000] BIOS-provided physical RAM map:
+[    0.000000] BIOS-e820: [mem 0x0000000000000000-0x000000000009fbff] usable
+[    0.000000] BIOS-e820: [mem 0x000000000009fc00-0x000000000009ffff] reserved
+[    0.000000] BIOS-e820: [mem 0x00000000000f0000-0x00000000000fffff] reserved
+[    0.000000] BIOS-e820: [mem 0x0000000000100000-0x000000007ffdffff] usable
+[    0.000000] BIOS-e820: [mem 0x000000007ffe0000-0x000000007fffffff] reserved
+[    0.000000] BIOS-e820: [mem 0x00000000fffc0000-0x00000000ffffffff] reserved
+[    0.000000] BIOS-e820: [mem 0x000000fd00000000-0x000000ffffffffff] reserved
+[    0.000000] NX (Execute Disable) protection: active
+[    0.000000] APIC: Static calls initialized
+[    0.000000] SMBIOS 2.8 present.
+[    0.000000] DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.3-debian-1.16.3-2 04/01/2014
+[    0.000000] DMI: Memory slots populated: 1/1
+...
+<ESC>[K[<ESC>[0;32m  OK  <ESC>[0m] Reached target <ESC>[0;1;39mbasic.target<ESC>[0m - Basic System.<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39mcron.service<ESC>[0m - Regular background program processing daemon.<U+000D>
+         Starting <ESC>[0;1;39mdbus.service<ESC>[0m - D-Bus System Message Bus...<U+000D>
+         Starting <ESC>[0;1;39me2scrub_reap.service<ESC>[0m - Re…ne ext4 Metadata Check Snapshots...<U+000D>
+         Starting <ESC>[0;1;39mpai-backend.service<ESC>[0m - Private AI OS backend...<U+000D>
+         Starting <ESC>[0;1;39mpai-kiosk.service<ESC>[0m - Private AI OS kiosk (cage and Chromium on tty1)...<U+000D>
+         Starting <ESC>[0;1;39msystemd-logind.service<ESC>[0m - User Login Management...<U+000D>
+         Starting <ESC>[0;1;39msystemd-user-sessions.service<ESC>[0m - Permit User Sessions...<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39mdbus.service<ESC>[0m - D-Bus System Message Bus.<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Finished <ESC>[0;1;39msystemd-user-sessions.service<ESC>[0m - Permit User Sessions.<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39mserial-getty@ttyS0.service<ESC>[0m - Serial Getty on ttyS0.<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Reached target <ESC>[0;1;39mgetty.target<ESC>[0m - Login Prompts.<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39mpai-backend.service<ESC>[0m - Private AI OS backend.<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Finished <ESC>[0;1;39me2scrub_reap.service<ESC>[0m - Re…line ext4 Metadata Check Snapshots.<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39msystemd-logind.service<ESC>[0m - User Login Management.<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Started <ESC>[0;1;39mpai-kiosk.service<ESC>[0m - Private AI OS kiosk (cage and Chromium on tty1).<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Reached target <ESC>[0;1;39mmulti-user.target<ESC>[0m - Multi-User System.<U+000D>
+[<ESC>[0;32m  OK  <ESC>[0m] Reached target <ESC>[0;1;39mgraphical.target<ESC>[0m - Graphical Interface.<U+000D>
+         Starting <ESC>[0;1;39mpai-selfcheck.service<ESC>[0m - P…e AI OS boot security self-check...<U+000D>
+<ESC>[!p<ESC>]104<U+0007><ESC>[?7h<ESC>[6n<ESC>[32766;32766H<ESC>[6n<ESC>[!p<ESC>]104<U+0007><ESC>[?7h<ESC>[6n<ESC>[32766;32766H<ESC>[6n<U+000D>
+Debian GNU/Linux 13 debian ttyS0
+
+debian login: [ 218.152670] security-selfcheck.sh[833]: PAI-SELFCHECK|live-root|PASS|examining the live /proc, /etc and tools
+[ 218.162987] security-selfcheck.sh[833]: PAI-SELFCHECK|backend-active|PASS|accepts connections on 127.0.0.1:8765 and has published its token file
+[ 219.331563] security-selfcheck.sh[833]: PAI-SELFCHECK|nft-default-drop|PASS|filter base chains with policy drop: input=1, forward=1, output=1; no unconditional accept; 3 configured base chains loaded as declared
+[ 219.473062] security-selfcheck.sh[833]: PAI-SELFCHECK|modules-blocked|PASS|blocked and not loaded: vboxsf
+[ 219.548017] security-selfcheck.sh[833]: PAI-SELFCHECK|sysctl-live|PASS|18 settings match the live kernel
+[ 220.306962] security-selfcheck.sh[833]: PAI-SELFCHECK|no-external-listeners|PASS|no listener beyond loopback; allowed: udp 10.0.2.15:68, udp6 [fe80::5054:ff:fe12:3456]:546, udp6 [fec0::5054:ff:fe12:3456]:546, udp6 [fec0::d4fc:dea6:b8ac:7fc9]:546
+[ 220.464023] security-selfcheck.sh[833]: PAI-SELFCHECK|units-active|PASS|active: nftables.service systemd-networkd.service
+[ 220.538655] security-selfcheck.sh[833]: PAI-SELFCHECK|backend-unprivileged|PASS|pid 791 runs as pai (uid 989) with no capabilities and no_new_privs
+[ 220.548771] security-selfcheck.sh[833]: PAI-SELFCHECK|backend-loopback-only|PASS|listens on 127.0.0.1:8765 and nowhere else on port 8765
+[ 220.562796] security-selfcheck.sh[833]: PAI-SELFCHECK|backend-refuses-anonymous|PASS|GET /health without credentials is refused with 401
+[ 220.574932] security-selfcheck.sh[833]: PAI-SELFCHECK|backend-health|PASS|authenticated GET /health returned 200: schema 1, version 0.0.1
+[ 220.754161] security-selfcheck.sh[833]: PAI-SELFCHECK|backend-sandbox-exposure|PASS|pai-backend.service exposure is 1.1, within the limit 1.2
+[ 220.766161] security-selfcheck.sh[833]: PAI-SELFCHECK|kiosk-active|PASS|pid 846 of pai-kiosk.service runs as pai-ui (uid 987); 11 chromium process(es) descend from pid 846
+[ 220.778161] security-selfcheck.sh[833]: PAI-SELFCHECK|kiosk-ready|PASS|/run/pai-ui/ready says ready: shell rendered, status bar 'Backend connected Version 0.0.1'
+[ 220.790161] security-selfcheck.sh[833]: PAI-SELFCHECK|no-secret-in-process-state|PASS|examined the argument list and environment of 63 processes: 0 credential-shaped strings, none accepted by the backend as a bearer token or a session cookie, and the bearer token is in none of them
+[ 220.802161] security-selfcheck.sh[833]: PAI-SELFCHECK|no-default-credentials|PASS|24 accounts in /etc/shadow, every password field locked or disabled; mode 640
+[ 220.810001] security-selfcheck.sh[833]: PAI-SELFCHECK|root-encrypted|PASS|root is on dm-crypt mapping cryptroot (LUKS2, on /dev/vda4); 2 keyslot(s), every one argon2id
+[ 220.813002] security-selfcheck.sh[833]: PAI-SELFCHECK|no-live-remnants|PASS|no live-boot or live-config package, live-config setting, live account, autologin or password-less sudo rule
+[ 220.816504] security-selfcheck.sh[833]: PAI-SELFCHECK|RESULT|PASS|18/18
+[ 221.492115] systemd-shutdown[1]: Syncing filesystems and block devices.
+[ 221.497078] systemd-shutdown[1]: Sending SIGTERM to remaining processes...
+[ 221.602398] systemd-journald[465]: Received SIGTERM from PID 1 (systemd-shutdow).
+[ 221.815317] systemd-shutdown[1]: Sending SIGKILL to remaining processes...
+[ 221.868665] systemd-shutdown[1]: Unmounting file systems.
+[ 221.887724] (sd-umount)[907]: Unmounting '/run/credentials/serial-getty@ttyS0.service'.
+[ 221.897439] (sd-umount)[908]: Unmounting '/run/credentials/systemd-networkd.service'.
+[ 221.904950] (sd-umount)[909]: Unmounting '/tmp'.
+[ 221.913244] (sd-umount)[910]: Unmounting '/run/credentials/systemd-resolved.service'.
+[ 221.920172] (sd-umount)[911]: Unmounting '/run/credentials/systemd-journald.service'.
+[ 221.927986] (sd-umount)[912]: Unmounting '/run/lock'.
+[ 222.117369] ACPI: PM: Preparing to enter system sleep state S5
+[ 222.121396] kvm: exiting hardware virtualization
+[ 222.122330] reboot: Power down

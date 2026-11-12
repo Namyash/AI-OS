@@ -111,6 +111,8 @@ def test_the_configured_bind_address_is_an_accepted_host(tmp_path: Path, bind_ho
             "PAI_PORT": str(PORT),
             "PAI_DATA_DIR": str(tmp_path / "state"),
             "PAI_TOKEN_FILE": str(tmp_path / "run" / "token"),
+            "PAI_ENDPOINT_FILE": str(tmp_path / "run" / "endpoint"),
+            "PAI_STATIC_DIR": str(tmp_path / "ui"),
         }
     )
     address = f"[{bind_host}]" if ":" in bind_host else bind_host

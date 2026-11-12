@@ -17,6 +17,7 @@ from backend.core.logging import (
     redact_text,
     redact_value,
     register_secret,
+    unregister_secret,
 )
 
 Emit = Callable[..., dict[str, object]]
@@ -63,6 +64,10 @@ def emit(capsys: pytest.CaptureFixture[str], root_logging_restored: None) -> Emi
         ('headers {"Authorization": "Basic dXNlcjpwYXNz"}', "dXNlcjpwYXNz"),
         ("cookie: session=abc123def456", "abc123def456"),
         ("private_key=-----BEGINKEYDATA", "-----BEGINKEYDATA"),
+        ("pai_session=Zm9vYmFyYmF6cXV4", "Zm9vYmFyYmF6cXV4"),
+        ('payload {"session_id": "Zm9vYmFyYmF6cXV4"}', "Zm9vYmFyYmF6cXV4"),
+        ("PAI_SESSION: Zm9vYmFyYmF6cXV4", "Zm9vYmFyYmF6cXV4"),
+        ("Cookie: theme=dark; pai_session=Zm9vYmFyYmF6cXV4", "Zm9vYmFyYmF6cXV4"),
     ],
 )
 def test_secrets_in_messages_are_masked(text: str, secret: str) -> None:
@@ -142,6 +147,23 @@ def test_registered_secret_is_masked_anywhere() -> None:
     secret = "plain-secret-value-0123456789"  # noqa: S105 - test fixture, not a credential
     register_secret(secret)
     assert redact_text(f"unexpectedly logged {secret} in prose") == f"unexpectedly logged {REDACTED} in prose"
+
+
+def test_a_secret_registered_under_an_owner_is_masked_until_that_owner_unregisters_it() -> None:
+    secret = "owned-secret-value-0123456789"  # noqa: S105 - test fixture, not a credential
+    register_secret(secret, owner="handle-that-is-not-the-secret")
+    assert redact_text(f"leak {secret}") == f"leak {REDACTED}"
+    unregister_secret("handle-that-is-not-the-secret")
+    assert redact_text(f"leak {secret}") == f"leak {secret}"
+
+
+def test_unregistering_one_owner_leaves_the_other_secrets_masked() -> None:
+    kept, dropped = "kept-secret-value-0123456789", "dropped-secret-value-0123456789"
+    register_secret(kept)
+    register_secret(dropped, owner="to-drop")
+    unregister_secret("to-drop")
+    unregister_secret("never-registered")  # unknown handles are ignored
+    assert redact_text(f"{kept} {dropped}") == f"{REDACTED} {dropped}"
 
 
 def test_registering_a_short_secret_is_refused() -> None:

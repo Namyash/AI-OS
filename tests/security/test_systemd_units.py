@@ -24,6 +24,10 @@ How a unit is judged (only ``[Service]`` directives count):
       # pai-lint: network-justified: <reason>         the unit needs more than loopback IP traffic
       # pai-lint: waive <Directive>: <reason>         a baseline or path directive is deliberately weaker, or an
                                                        Exec* directive may run a command with full privileges
+      # pai-lint: waive CapabilityBoundingSet: <reason>
+                                                    a root unit keeps CAP_SYS_ADMIN (mount, device-mapper, chroot
+                                                       setup: what an installer is for); the list must still be
+                                                       explicit, non-empty and free of the deny-list form
 
   ``NoNewPrivileges`` can never be waived.
 """
@@ -234,7 +238,7 @@ def _runs_as_root(unit: Unit) -> bool:
     return _is_root_user(unit.scalar("User"))
 
 
-def _capability_list_problems(capabilities: list[str], who: str) -> list[str]:
+def _capability_list_problems(capabilities: list[str], who: str, *, allow_root_equivalent: bool = False) -> list[str]:
     problems = []
     if any(c.startswith("~") for c in capabilities):
         problems.append(
@@ -242,7 +246,7 @@ def _capability_list_problems(capabilities: list[str], who: str) -> list[str]:
         )
     elif bad := [c for c in capabilities if not _CAPABILITY.match(c)]:
         problems.append(f"{who}: unrecognised capability {', '.join(bad)} in CapabilityBoundingSet")
-    elif equivalent := ROOT_EQUIVALENT_CAPABILITIES & set(capabilities):
+    elif (equivalent := ROOT_EQUIVALENT_CAPABILITIES & set(capabilities)) and not allow_root_equivalent:
         problems.append(f"{who}: {', '.join(sorted(equivalent))} in CapabilityBoundingSet is effectively all of root")
     return problems
 
@@ -258,7 +262,8 @@ def _check_identity_and_capabilities(unit: Unit, problems: list[str]) -> None:
                 "root unit must set CapabilityBoundingSet to a non-empty list narrower than all capabilities"
             )
         else:
-            problems += _capability_list_problems(bounding, "root unit")
+            waived = _justified(unit, "waive CapabilityBoundingSet", problems)
+            problems += _capability_list_problems(bounding, "root unit", allow_root_equivalent=waived)
         return
     if bounding == [] and not ambient:
         return
@@ -810,6 +815,30 @@ def test_no_new_privileges_cannot_be_waived() -> None:
 )
 def test_justified_root_needs_a_non_empty_capability_list_narrower_than_all(bounding: str) -> None:
     assert lint(as_root(GOOD_UNIT, bounding=bounding)) != []
+
+
+def test_root_may_keep_cap_sys_admin_only_with_a_documented_waiver() -> None:
+    bounding = "CAP_SYS_ADMIN CAP_SYS_CHROOT"
+    assert mentions(lint(as_root(GOOD_UNIT, bounding=bounding)), "CAP_SYS_ADMIN")
+    waived = "# pai-lint: waive CapabilityBoundingSet: mounts the target and talks to device-mapper\n"
+    assert lint(waived + as_root(GOOD_UNIT, bounding=bounding)) == []
+
+
+def test_the_cap_sys_admin_waiver_needs_a_reason_and_root_justification() -> None:
+    bounding = "CAP_SYS_ADMIN"
+    assert mentions(
+        lint("# pai-lint: waive CapabilityBoundingSet:\n" + as_root(GOOD_UNIT, bounding=bounding)),
+        "waive CapabilityBoundingSet",
+        "non-empty reason",
+    )
+    unjustified = "# pai-lint: waive CapabilityBoundingSet: x\n" + without(GOOD_UNIT, "User")
+    assert mentions(lint(unjustified), "root-justified")
+
+
+@pytest.mark.parametrize("bounding", ["", "~", "~CAP_SYS_ADMIN", "cap_sys_admin"])
+def test_the_cap_sys_admin_waiver_does_not_excuse_an_unusable_capability_list(bounding: str) -> None:
+    waived = "# pai-lint: waive CapabilityBoundingSet: x\n"
+    assert lint(waived + as_root(GOOD_UNIT, bounding=bounding)) != []
 
 
 def test_justified_root_with_an_unset_capability_bounding_set_is_rejected() -> None:

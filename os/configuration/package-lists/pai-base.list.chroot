@@ -39,3 +39,53 @@ python3-starlette
 python3-uvicorn
 # pydantic: the settings model and the API response models.
 python3-pydantic
+
+# Kiosk shell (os/kiosk, kiosk/): the UI runs in Chromium under cage on tty1. Installed with --apt-recommends false.
+# Sizes: docs/development/KIOSK.md. cage and Chromium pull in a lot as hard dependencies (wlroots, Mesa and its software
+# renderer, Xwayland, GTK 3, Mesa's LLVM): none of it is listed here, none can be left out, and none starts a service.
+# cage: the Wayland compositor that shows one application full screen (the launcher). It takes the display and input
+# devices from logind, draws with wlroots' software renderer in a virtual machine without a GPU, and has no panel,
+# menu or way to leave the application.
+cage
+# chromium: the browser, Debian's own build (signed and security-updated by the archive, frozen with it by
+# PAI_SNAPSHOT: threat T12). Its sandbox needs unprivileged user namespaces, which Debian kernels allow, so the
+# setuid helper in chromium-sandbox is deliberately absent: one setuid-root binary less on the image.
+chromium
+# fonts-dejavu-core: the fallback font. The UI ships its own typeface, but text it does not cover (and the browser's
+# own error pages) needs one system font, and fontconfig refuses to render without any. fontconfig-config already
+# pulls it in as a dependency; it is named here so that a dependency change cannot drop it unnoticed.
+fonts-dejavu-core
+# libpam-systemd: pam_systemd, which pai-kiosk.service's PAMName=login uses to register the kiosk as a login session
+# on seat0 (so logind can hand cage the display and input devices) and to create /run/user/<uid>. Also a dependency
+# of other packages here; named for the same reason as the font.
+libpam-systemd
+
+# Installer (os/installer, installer/, docs/architecture/INSTALLER_DESIGN.md): the live system installs itself, so the
+# tools that partition, format, copy the running root and install the boot loader are part of the image. Installed with
+# --apt-recommends false; measured in debian:trixie-slim on top of systemd, udev, cryptsetup and live-boot: these eight
+# packages and their hard dependencies (libfdisk1, libext2fs2t64, libefivar1t64, libefiboot1t64, libfreetype6, libfuse3-4,
+# libpng16-16t64, libbrotli1, gettext-base, ...) are 27 packages, about 11 MB to download and 42 MiB installed, mostly
+# GRUB's modules. util-linux (lsblk, wipefs, blkid, mount), kmod, udev and cryptsetup are already part of the image.
+# os-prober is deliberately absent (grub-common only recommends it): it mounts every other disk to look for operating
+# systems, which an installer that touches exactly one named disk must never do. tests/security/test_os_hardening.py
+# forbids it.
+# fdisk: sfdisk, which writes and verifies the GPT partition table from a script (the "fdisk" package carries it since
+# util-linux 2.38; it is not in the base).
+fdisk
+# dosfstools: mkfs.vfat for the EFI system partition.
+dosfstools
+# e2fsprogs: mkfs.ext4 for /boot and the root filesystem, and tune2fs/e2fsck. Priority required, so debootstrap may
+# already install it; named here so that a change to the base cannot drop it unnoticed (as the font and libpam-systemd).
+e2fsprogs
+# rsync: copies the running root filesystem to the target preserving ownership, modes, hard links, ACLs and xattrs,
+# staying on one filesystem.
+rsync
+# grub-common, grub2-common: grub-install, grub-mkconfig, grub-probe and update-grub, the boot loader tools the engine
+# runs inside the target.
+grub-common
+grub2-common
+# grub-pc-bin: the i386-pc modules for `grub-install --target=i386-pc` (BIOS, GPT with a BIOS boot partition).
+grub-pc-bin
+# grub-efi-amd64-bin: the x86_64-efi modules for `grub-install --target=x86_64-efi --removable --no-nvram` (UEFI; also
+# pulls grub-efi-amd64-unsigned). No signed shim or efibootmgr: Secure Boot and firmware variables are out of scope.
+grub-efi-amd64-bin

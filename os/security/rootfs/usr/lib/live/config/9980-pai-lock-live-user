@@ -1,0 +1,113 @@
+#!/bin/sh
+# live-config component: the live session has no password login and no passwordless sudo (risk R16).
+#
+# Debian's live-config creates a login account at boot with a password everybody knows (0030-user-setup: the hash of
+# "live" for the user it is configured to create, "user" unless the boot options or configuration say otherwise) and
+# then gives it passwordless sudo (0040-sudo: /etc/sudoers.d/live; it also puts the account in the sudo group, which
+# polkit's live rules treat as an administrator without a prompt, 1080-policykit). live-config runs every file in
+# /usr/lib/live/config in name order, as root, once per boot; this one is named to sort after all of those, so what
+# they created is what it undoes. Which account that is is read from the system, not assumed: every ordinary login
+# account (a uid in the range login.defs gives for them) whose password field is not already a lock marker is locked.
+#
+# What it does, for every ordinary login account:
+#   * locks the password for good: the field becomes "!", which no password hashes to. The old hash is gone, so
+#     unlocking the account again cannot bring the well-known password back (`usermod -U` on "!hash" would);
+#   * removes the account from the sudo group;
+# and removes /etc/sudoers.d/live, the passwordless grant live-config writes. It exits non-zero, which live-config
+# logs, when a password is still usable or the grant is still there afterwards. The boot self-check's
+# no-default-credentials check examines /etc/shadow of the running image and is what proves the result.
+#
+# The kiosk is how a person uses the live session; the serial console and the other virtual terminals offer a login
+# prompt that no password opens. Test-only: PAI_LIVE_LOCK_ROOT is a prefix for the files read below, so
+# tests/end_to_end/test_live_user_lock.py can run this against a simulated tree.
+set -eu
+LC_ALL=C
+export LC_ALL
+
+ROOT="${PAI_LIVE_LOCK_ROOT:-}"
+PASSWD_FILE="$ROOT/etc/passwd"
+SHADOW_FILE="$ROOT/etc/shadow"
+GROUP_FILE="$ROOT/etc/group"
+LOGIN_DEFS="$ROOT/etc/login.defs"
+SUDOERS_LIVE="$ROOT/etc/sudoers.d/live" # written by live-config's sudo component
+SUDO_GROUP=sudo                         # the group that component adds the account to
+LOCKED_PASSWORD='!'
+
+# Debian's own range for ordinary accounts, used when login.defs does not say.
+DEFAULT_UID_MIN=1000
+DEFAULT_UID_MAX=60000
+
+# login_def <key> <default>: the number login.defs sets for <key>, or the default.
+login_def() {
+    value=$(sed -n "s/^[[:space:]]*$1[[:space:]][[:space:]]*\\([0-9][0-9]*\\)[[:space:]]*\$/\\1/p" "$LOGIN_DEFS" 2>/dev/null | tail -n 1)
+    echo "${value:-$2}"
+}
+
+# password_is_usable <account>: succeeds when the account's password field in the shadow file is anything but a lock
+# marker (! or *). An empty field counts: it is a login with no password at all.
+password_is_usable() {
+    while IFS=: read -r name field _; do
+        if [ "$name" = "$1" ]; then
+            case $field in
+                '!'* | '*'*) return 1 ;;
+                *) return 0 ;;
+            esac
+        fi
+    done <"$SHADOW_FILE"
+    return 1
+}
+
+# is_member <group> <account>: succeeds when the group file lists the account as a member of the group.
+is_member() {
+    while IFS=: read -r name _ _ members; do
+        if [ "$name" = "$1" ]; then
+            case ",$members," in
+                *",$2,"*) return 0 ;;
+            esac
+        fi
+    done <"$GROUP_FILE"
+    return 1
+}
+
+# login_accounts: the names of the ordinary login accounts, one per line.
+login_accounts() {
+    uid_min=$(login_def UID_MIN "$DEFAULT_UID_MIN")
+    uid_max=$(login_def UID_MAX "$DEFAULT_UID_MAX")
+    while IFS=: read -r name _ uid _; do
+        case $uid in
+            '' | *[!0-9]*) continue ;;
+        esac
+        if [ "$uid" -ge "$uid_min" ] && [ "$uid" -le "$uid_max" ]; then
+            echo "$name"
+        fi
+    done <"$PASSWD_FILE"
+}
+
+printf ' pai-lock-live-user'
+
+accounts=$(login_accounts)
+failed=0
+
+for account in $accounts; do
+    if password_is_usable "$account"; then
+        usermod -p "$LOCKED_PASSWORD" -- "$account" || failed=1
+    fi
+    if is_member "$SUDO_GROUP" "$account"; then
+        gpasswd -d "$account" "$SUDO_GROUP" >/dev/null || failed=1
+    fi
+done
+
+rm -f -- "$SUDOERS_LIVE"
+
+# What was asked for must now be true; say so when it is not (live-config logs the output and the exit status).
+for account in $accounts; do
+    if password_is_usable "$account"; then
+        echo "pai-lock-live-user: the password of account $account is still usable" >&2
+        failed=1
+    fi
+done
+if [ -e "$SUDOERS_LIVE" ]; then
+    echo "pai-lock-live-user: $SUDOERS_LIVE is still there" >&2
+    failed=1
+fi
+exit "$failed"

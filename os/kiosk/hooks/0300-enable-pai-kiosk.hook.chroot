@@ -1,0 +1,13 @@
+#!/bin/sh
+# Runs inside the image chroot at build time: enable the kiosk and give it the first virtual terminal.
+#
+# The unit, its sandbox and the Chromium policy are files of this component (os/kiosk/rootfs); the account it runs
+# as (pai-ui) is defined in os/systemd/rootfs/usr/lib/sysusers.d/pai.conf and created by that component's hook.
+# File modes are set for every file by os/build/assemble-config.sh.
+set -e
+systemctl enable pai-kiosk.service
+
+# The kiosk owns tty1. Masking the getty there also defeats the live image's console autologin: live-config's
+# getty generator adds an autologin drop-in for getty@tty1 (and tty2 to tty6) at boot, and a masked unit ignores it.
+# Serial consoles are other units (serial-getty@ttyS0 and so on) and keep working.
+systemctl mask getty@tty1.service

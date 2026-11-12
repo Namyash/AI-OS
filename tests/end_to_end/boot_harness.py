@@ -11,6 +11,8 @@ Exit status: 0 the self-check passed, 1 it did not, 2 the boot could not be perf
 from __future__ import annotations
 
 import argparse
+import codecs
+import contextlib
 import hashlib
 import math
 import os
@@ -25,7 +27,9 @@ import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
+from tests.end_to_end.container_boot import validate_extra_kernel_args
 from tests.end_to_end.selfcheck_output import RESULT_NAME, parse_selfcheck, selfcheck_problems
 
 HARNESS_DIR = Path(__file__).resolve().parent
@@ -36,8 +40,11 @@ ENV_ISO = "PAI_ISO"
 ENV_TIMEOUT = "PAI_BOOT_TIMEOUT"
 ENV_MEMORY = "PAI_QEMU_MEMORY"
 ENV_CPUS = "PAI_QEMU_CPUS"
+ENV_EXTRA_ARGS = "PAI_BOOT_EXTRA_ARGS"
 DEFAULT_TIMEOUT_S = 1800  # software emulation is slow; a normal boot is minutes, a loaded machine needs headroom
-DEFAULT_MEMORY_MIB = 2048
+# The image runs a kiosk, Chromium under software emulation (cage, a Wayland compositor with the pixman renderer, and a
+# browser with several processes), next to the backend and the system: 2048 MiB left it too little to render the page.
+DEFAULT_MEMORY_MIB = 3072
 DEFAULT_CPUS = 2
 
 IMAGE_REPOSITORY = "pai-e2e-qemu"
@@ -72,13 +79,19 @@ class BootConfig:
     timeout_s: float = DEFAULT_TIMEOUT_S
     memory_mib: int = DEFAULT_MEMORY_MIB
     cpus: int = DEFAULT_CPUS
+    extra_kernel_args: str = ""  # words appended to the guest's kernel command line (PAI_BOOT_EXTRA_ARGS)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> BootConfig:
+        try:
+            extra = validate_extra_kernel_args(env.get(ENV_EXTRA_ARGS, ""))
+        except ValueError as error:
+            raise ConfigError(f"{ENV_EXTRA_ARGS} {error}") from None
         return cls(
             timeout_s=_positive_number(env, ENV_TIMEOUT, DEFAULT_TIMEOUT_S),
             memory_mib=int(_positive_number(env, ENV_MEMORY, DEFAULT_MEMORY_MIB, whole=True)),
             cpus=int(_positive_number(env, ENV_CPUS, DEFAULT_CPUS, whole=True)),
+            extra_kernel_args=extra,
         )
 
 
@@ -181,21 +194,38 @@ def ensure_image(tag: str | None = None, *, dockerfile: Path = DOCKERFILE) -> st
     return tag
 
 
-def docker_run_command(name: str, iso: Path, tag: str, config: BootConfig) -> list[str]:
-    """`docker run` for one boot: no network, no capabilities, read-only root, ISO and harness mounted read-only."""
-    for path in (iso, HARNESS_DIR):
-        if "," in str(path):
-            raise ConfigError(f"a comma in {path} breaks the docker --mount syntax; move or rename it")
+def hardened_run_prefix(name: str, *, interactive: bool = False) -> list[str]:
+    """The start of every `docker run` of the tests: no network, no capabilities, a read-only root, a scratch /work.
+
+    `interactive` keeps the container's standard input open (docker run -i), which is how a test types on the guest's
+    serial console (QEMU's standard input).
+    """
     return [
-        "docker", "run", "--rm", "--name", name,
+        "docker", "run", "--rm", *(["-i"] if interactive else []), "--name", name,
         "--network", "none",
         "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "512",
         "--tmpfs", "/work:rw,size=512m,mode=1777",  # the extracted kernel and initrd
-        "--mount", f"type=bind,source={iso},target={IN_CONTAINER_ISO},readonly",
-        "--mount", f"type=bind,source={HARNESS_DIR},target={IN_CONTAINER_HARNESS},readonly",
+    ]  # fmt: skip
+
+
+def bind_mount_option(source: Path, target: str) -> list[str]:
+    """`--mount` for a read-only bind mount; a comma in the path would end the option early, so it is refused."""
+    if "," in str(source):
+        raise ConfigError(f"a comma in {source} breaks the docker --mount syntax; move or rename it")
+    return ["--mount", f"type=bind,source={source},target={target},readonly"]
+
+
+def docker_run_command(name: str, iso: Path, tag: str, config: BootConfig) -> list[str]:
+    """`docker run` for one boot: no network, no capabilities, read-only root, ISO and harness mounted read-only."""
+    return [
+        *hardened_run_prefix(name),
+        *bind_mount_option(iso, IN_CONTAINER_ISO),
+        *bind_mount_option(HARNESS_DIR, IN_CONTAINER_HARNESS),
         tag,
         "python3", f"{IN_CONTAINER_HARNESS}/container_boot.py", IN_CONTAINER_ISO,
         "--memory-mib", str(config.memory_mib), "--cpus", str(config.cpus),
+        # One argument, in the --name=value form: a value that starts with "-" is not read as an option.
+        *([f"--extra-kernel-args={config.extra_kernel_args}"] if config.extra_kernel_args else []),
     ]  # fmt: skip
 
 
@@ -225,6 +255,169 @@ def _visible(char: str) -> str:
     return "<ESC>" if char == "\x1b" else f"<U+{ord(char):04X}>"
 
 
+class ConsoleHandler(Protocol):
+    """Reacts to a container's console while it is read. Both methods return True when the run has reached its goal and
+    should end (after the grace period). `send` types text on the console (the container's standard input)."""
+
+    def feed(self, chunk: str, send: Callable[[str], None]) -> bool: ...
+
+    def poll(self, send: Callable[[str], None]) -> bool: ...
+
+
+@dataclass(frozen=True)
+class StreamOutcome:
+    output: str  # everything the container printed, in order, as the `scrub` function left it
+    timed_out: bool  # the overall timeout ended the run
+    ended_by_itself: bool  # the container ended on its own (the guest powered off, or docker or the script failed)
+    stopped_by_handler: bool  # the handler said the goal was reached
+    returncode: int | None  # the container's exit status (QEMU's own after a power-off: 0)
+    echo_error: str = ""  # why live echoing stopped, if it did; collecting the output went on regardless
+
+
+POLL_INTERVAL_S = 0.5
+READ_SIZE = 4096
+
+
+class LineWatcher:
+    """The handler of a plain boot: ends the run when a complete console line satisfies `predicate`."""
+
+    def __init__(self, predicate: Callable[[str], bool]) -> None:
+        self._predicate = predicate
+        self._pending = ""
+
+    def feed(self, chunk: str, send: Callable[[str], None]) -> bool:
+        self._pending += chunk
+        *complete, self._pending = self._pending.split("\n")
+        return any(self._predicate(line) for line in complete)
+
+    def poll(self, send: Callable[[str], None]) -> bool:
+        return False
+
+
+def stream_container(
+    argv: Sequence[str],
+    name: str,
+    timeout_s: float,
+    *,
+    echo: Callable[[str], None] | None = None,
+    handler: ConsoleHandler | None = None,
+    scrub: Callable[[str], str] | None = None,
+    interactive: bool = False,
+    grace_s: float | None = None,
+) -> StreamOutcome:
+    """Run `argv` (a `docker run` of the container called `name`) and read its console until it ends, the handler's goal
+    is reached (then `grace_s`, default POWEROFF_GRACE_S, more for the guest to power off) or `timeout_s` elapses.
+
+    The console is read in raw chunks, so a prompt that has no newline is seen at once; `handler` gets every chunk,
+    and what it types goes to the container's standard input when `interactive`. `scrub` is applied to each complete
+    line before it is echoed or kept (the console is the one place a secret could leak to). The container is always
+    removed, also on an exception or Ctrl-C. A failing `echo` stops the echoing only; the output is still collected.
+    """
+    lines: list[str] = []
+    echo_failures: list[str] = []
+    goal = threading.Event()
+    process = subprocess.Popen(  # noqa: S603
+        list(argv),
+        stdin=subprocess.PIPE if interactive else subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    typing_lock = threading.Lock()
+
+    def send(text: str) -> None:
+        if process.stdin is None:
+            return
+        with typing_lock:
+            try:
+                process.stdin.write(text.encode("utf-8"))
+                process.stdin.flush()
+            except OSError:  # the container is gone; the run is ending anyway
+                pass
+
+    def keep(line: str) -> None:
+        nonlocal echo
+        clean = scrub(line) if scrub is not None else line
+        lines.append(clean)
+        if echo is not None:
+            try:
+                echo(clean)
+            except Exception as error:  # display is best effort; the verdict must not depend on it
+                echo = None
+                echo_failures.append(f"{type(error).__name__}: {error}")
+
+    reader_errors: list[BaseException] = []
+
+    def pump() -> None:
+        assert process.stdout is not None
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        pending = ""
+        try:
+            while chunk := process.stdout.read1(READ_SIZE):  # type: ignore[attr-defined]
+                text = decoder.decode(chunk)
+                if handler is not None and handler.feed(text, send):
+                    goal.set()
+                pending += text
+                while (newline := pending.find("\n")) != -1:
+                    keep(pending[: newline + 1])
+                    pending = pending[newline + 1 :]
+            if tail := pending + decoder.decode(b"", final=True):
+                keep(tail)
+        except BaseException as error:  # a bug in a handler must fail the run, not end it quietly as "the guest exited"
+            reader_errors.append(error)
+
+    reader = threading.Thread(target=pump, name="console-reader", daemon=True)
+    reader.start()
+    timed_out = False
+    try:
+        deadline = time.monotonic() + timeout_s
+        while reader.is_alive():
+            if time.monotonic() >= deadline:
+                timed_out = True
+                break
+            if handler is not None and handler.poll(send):
+                goal.set()
+            if goal.is_set():
+                reader.join(POWEROFF_GRACE_S if grace_s is None else grace_s)
+                break
+            reader.join(POLL_INTERVAL_S)
+        ended_by_itself = not reader.is_alive() and not timed_out
+    finally:
+        kill_container(name)
+        if process.stdin is not None:
+            with typing_lock, contextlib.suppress(OSError):
+                process.stdin.close()  # so that a docker client still waiting on its input can end
+        try:
+            process.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        reader.join(timeout=10)
+    if reader_errors:
+        raise reader_errors[0]
+    return StreamOutcome(
+        output="".join(lines),
+        timed_out=timed_out,
+        ended_by_itself=ended_by_itself,
+        stopped_by_handler=goal.is_set(),
+        returncode=process.returncode,
+        echo_error="; ".join(echo_failures),
+    )
+
+
+def require_a_real_run(outcome: StreamOutcome, what: str) -> None:
+    """Raise BootEnvironmentError when the container ended with a failing status before the goal was reached.
+
+    The status of a container whose guest powered off is QEMU's own, 0. Anything else (docker could not start it, the
+    ISO or the disk could not be read, the emulator crashed) says nothing about the image under test.
+    """
+    if outcome.ended_by_itself and outcome.returncode != 0 and not outcome.stopped_by_handler:
+        raise BootEnvironmentError(
+            f"the {what} container exited with status {outcome.returncode} before the guest printed a verdict; "
+            "docker, the ISO or the emulator failed, which says nothing about the image. Last output:\n"
+            + printable_console_text(outcome.output[-1500:])
+        )
+
+
 def boot_iso(iso: Path, config: BootConfig, *, tag: str, echo: Callable[[str], None] | None = None) -> BootOutcome:
     """Boot `iso` and return the serial console output.
 
@@ -235,65 +428,20 @@ def boot_iso(iso: Path, config: BootConfig, *, tag: str, echo: Callable[[str], N
     not start it, the ISO could not be read, the emulator crashed).
     """
     name = f"{CONTAINER_PREFIX}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
-    lines: list[str] = []
-    echo_failures: list[str] = []
-    result_seen = threading.Event()
-    process = subprocess.Popen(  # noqa: S603
+    outcome = stream_container(
         docker_run_command(name, iso, tag, config),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        name,
+        config.timeout_s,
+        echo=echo,
+        handler=LineWatcher(_has_result_line),
     )
-
-    def pump() -> None:
-        assert process.stdout is not None
-        show = echo
-        for raw in process.stdout:
-            line = raw.decode("utf-8", errors="replace")
-            lines.append(line)
-            if show is not None:
-                try:
-                    show(line)
-                except Exception as error:  # display is best effort; the verdict must not depend on it
-                    show = None
-                    echo_failures.append(f"{type(error).__name__}: {error}")
-            if _has_result_line(line):
-                result_seen.set()
-
-    reader = threading.Thread(target=pump, name="serial-reader", daemon=True)
-    reader.start()
-    timed_out = False
-    ended_by_itself = False
-    try:
-        deadline = time.monotonic() + config.timeout_s
-        while reader.is_alive():
-            if time.monotonic() >= deadline:
-                timed_out = True
-                break
-            if result_seen.is_set():
-                reader.join(POWEROFF_GRACE_S)
-                break
-            reader.join(0.5)
-        ended_by_itself = not reader.is_alive() and not timed_out
-    finally:
-        kill_container(name)
-        try:
-            process.wait(timeout=30)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
-        reader.join(timeout=10)
-    # The container's exit status is QEMU's own: 0 after the guest powered off. A container that ended any other way
-    # (docker failed to start it, the boot script gave up) closed the output stream too, but that is not a power-off.
-    output = "".join(lines)
-    if ended_by_itself and process.returncode != 0 and not result_seen.is_set():
-        raise BootEnvironmentError(
-            f"the boot container exited with status {process.returncode} before the guest printed a verdict; "
-            "docker, the ISO or the emulator failed, which says nothing about the self-check. Last output:\n"
-            + printable_console_text(output[-1500:])
-        )
-    powered_off = ended_by_itself and process.returncode == 0
-    return BootOutcome(output=output, timed_out=timed_out, powered_off=powered_off, echo_error="; ".join(echo_failures))
+    require_a_real_run(outcome, "boot")
+    return BootOutcome(
+        output=outcome.output,
+        timed_out=outcome.timed_out,
+        powered_off=outcome.ended_by_itself and outcome.returncode == 0,
+        echo_error=outcome.echo_error,
+    )
 
 
 def boot_problems(outcome: BootOutcome) -> list[str]:

@@ -1,4 +1,4 @@
-# pai-lint: capabilities-justified: lists the live nftables ruleset, which needs CAP_NET_ADMIN; it is an ambient capability of an unprivileged user and the bounding set holds that one capability and nothing else.
+# pai-lint: capabilities-justified: three read-only needs of an unprivileged user, each for one check, and the bounding set holds these three and nothing else. CAP_NET_ADMIN lists the live nftables ruleset (nft-default-drop). CAP_SYS_PTRACE reads /proc/<pid>/environ of every account's processes, which only the process's own uid or this capability may read (no-secret-in-process-state). CAP_DAC_READ_SEARCH reads /etc/shadow, which is root-only (no-default-credentials). None of them writes anything, and the unit still cannot become root or reach PID 1 as root.
 # pai-lint: network-justified: nft reads the firewall ruleset over an AF_NETLINK socket, and the backend checks make two HTTP requests to the backend's loopback address (AF_INET/AF_INET6). IPAddressDeny=any with IPAddressAllow=localhost still blocks every address but loopback.
 # pai-lint: waive ProcSubset: the checks read /proc/modules, /proc/sys and /proc/net, which ProcSubset=pid would hide.
 # pai-lint: waive ProtectProc: backend-unprivileged reads /proc/<MainPID>/status of the backend to see the uid, capabilities and no_new_privs the process really has. ProtectProc=invisible and =ptraceable both hide another user's process from this unit (measured under systemd 257 as this account); the entry is read-only metadata and the unit only runs when the kernel command line asks for it.
@@ -7,9 +7,9 @@ Description=Private AI OS boot security self-check
 Documentation=file:///usr/lib/pai/security-selfcheck.sh
 # Runs only when the kernel command line asks for it (the boot-test harness does); a normal boot skips the unit.
 ConditionKernelCommandLine=pai.selfcheck=1
-# After the backend as well: the backend checks examine the running service (and wait a bounded time for it to finish
-# starting, because the unit counts as started as soon as python3 is executed).
-After=multi-user.target nftables.service systemd-networkd.service pai-backend.service
+# After the backend and the kiosk as well: their checks examine the running services (and wait a bounded time for them
+# to finish starting, because a unit counts as started as soon as its program is executed).
+After=multi-user.target nftables.service systemd-networkd.service pai-backend.service pai-kiosk.service
 # The boot test needs the machine to stop by itself whatever the outcome; the verdict is on the console.
 SuccessAction=poweroff-force
 FailureAction=poweroff-force
@@ -17,19 +17,22 @@ FailureAction=poweroff-force
 [Service]
 Type=oneshot
 ExecStart=/usr/lib/pai/security-selfcheck.sh
-# Not root: no check reads or runs anything that needs it. As uid 0, systemctl would reach PID 1 over its private
+# Not root, although two checks read what only root may (other accounts' process environments, /etc/shadow): the
+# capabilities above are what those reads need, and nothing more. As uid 0, systemctl would reach PID 1 over its private
 # socket, which accepts root without any capability, so a flaw in a check could start units outside this sandbox.
 # The account has no login and is defined in os/systemd/rootfs/usr/lib/sysusers.d/pai.conf, which also makes it a
 # member of the backend's group: that is what lets it read the backend's token (0640) to authenticate one request.
 User=pai-selfcheck
 StandardOutput=journal+console
 StandardError=journal+console
-# A hung check must still end the run (FailureAction) instead of leaving the boot test waiting for its own timeout.
-TimeoutStartSec=300
+# A hung check must still end the run (FailureAction) instead of leaving the boot test waiting for its own timeout. Room
+# for the two bounded waits (the backend, security-selfcheck.sh BACKEND_READY_TIMEOUT, then the kiosk, KIOSK_READY_TIMEOUT)
+# and for the checks after them; tests/end_to_end/test_selfcheck_wiring.py keeps it above their sum.
+TimeoutStartSec=900
 
 NoNewPrivileges=yes
-AmbientCapabilities=CAP_NET_ADMIN
-CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN CAP_SYS_PTRACE CAP_DAC_READ_SEARCH
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_SYS_PTRACE CAP_DAC_READ_SEARCH
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes

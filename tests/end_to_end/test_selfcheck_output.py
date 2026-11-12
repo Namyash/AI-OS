@@ -1,26 +1,55 @@
 """Fast tests (no Docker) for reading the self-check verdict from serial console output.
 
-The fixtures in tests/end_to_end/fixtures are excerpts of real serial logs of the live image under QEMU: boot noise,
-systemd status lines with ANSI colours, and the journald console prefix on every self-check line. They were captured
-with the shipped unit and script installed into a booted guest, because the ISO had not been rebuilt with them yet;
-the all-pass capture also had a systemd-resolved drop-in (LLMNR=no) applied, see docs/development/BOOT_TESTING.md.
-In the files `<ESC>` stands for the escape character, and the tests re-create CRLF line endings, so the files stay
-plain, diff-friendly text.
+The serial_*.log fixtures in tests/end_to_end/fixtures are excerpts of the console log of one real boot of the ISO
+under QEMU through the real harness (then the self-check printed `RESULT|PASS|12/12`): kernel and systemd noise, status
+lines with ANSI colours and carriage returns, the login prompt with terminal-reset sequences in front of the first
+check line, and the journald console prefix on every self-check line. The backend's bearer token is never printed by
+the script, and a test below keeps it out of the files.
+
+The excerpts were then brought up to the 16 checks the script runs now (the kiosk, the process-state scan and the
+account check were added): the four new check lines, the kiosk unit in the status stream (and no getty on tty1, which
+the kiosk owns), the later check timestamps (the self-check now waits for the kiosk) and the harness's new memory
+default are composed by hand in the script's own wording around the real captured lines. They are to be replaced by an
+excerpt of a real boot of an image that has the kiosk (see "The serial-log fixtures" in
+docs/development/BOOT_TESTING.md).
+
+* serial_all_pass.log is the excerpt as it is.
+* serial_one_failure.log is the same excerpt with one check line replaced by a failure (no-external-listeners, in the
+  script's own wording from a boot whose systemd-resolved listened on the LLMNR port) and the summary changed to 15/16.
+* serial_no_result.log is the same excerpt cut after the backend-health line, as if the console had been cut.
+* serial_garbage.log is boot noise from a kernel and systemd with no self-check in it.
+
+The harness writes control characters as visible markers, and so do the files: `<ESC>` is the escape character and
+`<U+000D>` a carriage return; `load` turns them back. The tests also re-create CRLF line endings. The files stay plain,
+diff-friendly text.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
 
-from tests.end_to_end.selfcheck_output import REQUIRED_CHECKS, CheckResult, parse_selfcheck, selfcheck_problems
+from tests.end_to_end.selfcheck_output import (
+    INSTALLED_ONLY_CHECKS,
+    REQUIRED_CHECKS,
+    CheckResult,
+    parse_selfcheck,
+    required_checks,
+    selfcheck_problems,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
+_MARKER = re.compile(r"<U\+([0-9A-F]{4,6})>")
+
+
 def load(name: str, *, crlf: bool = True) -> str:
+    """A fixture as the serial console printed it: markers turned back into characters, optionally with CRLF lines."""
     text = (FIXTURES / name).read_text(encoding="utf-8").replace("<ESC>", "\x1b")
+    text = _MARKER.sub(lambda marker: chr(int(marker[1], 16)), text)
     return text.replace("\n", "\r\n") if crlf else text
 
 
@@ -247,7 +276,17 @@ def test_the_required_checks_have_no_duplicates() -> None:
 def test_a_real_all_pass_log_is_accepted(crlf: bool) -> None:
     results = parse_selfcheck(load("serial_all_pass.log", crlf=crlf))
     assert selfcheck_problems(results) == []
+    assert [result.name for result in results if result.name != "RESULT"] == list(REQUIRED_CHECKS)
     assert results[-1] == CheckResult("RESULT", True, f"{len(results) - 1}/{len(results) - 1}")
+
+
+def test_the_real_log_fixtures_carry_the_serial_noise_the_parser_has_to_cope_with() -> None:
+    text = load("serial_all_pass.log", crlf=False)
+    assert "\x1b[0;32m" in text  # status colours
+    assert "\r" in text  # carriage returns the console added itself
+    assert "\x07" in text  # a terminal-reset sequence ending in BEL, right in front of the first check line
+    assert "[    0.000000] Linux version" in text  # kernel messages
+    assert len(parse_selfcheck(text)) == len(REQUIRED_CHECKS) + 1
 
 
 def test_a_real_log_with_one_failing_check_names_that_check() -> None:
@@ -255,16 +294,99 @@ def test_a_real_log_with_one_failing_check_names_that_check() -> None:
     problems = selfcheck_problems(results)
     assert len(problems) == 1
     assert problems[0].startswith("no-external-listeners FAILED: listening beyond loopback")
-    assert results[-1].passed is False
+    assert results[-1] == CheckResult("RESULT", False, f"{len(REQUIRED_CHECKS) - 1}/{len(REQUIRED_CHECKS)}")
 
 
 def test_a_real_log_cut_off_before_the_result_line_is_a_failure() -> None:
     results = parse_selfcheck(load("serial_no_result.log"))
     assert results, "the fixture is meant to contain some check lines"
-    assert any("no final RESULT line" in problem for problem in selfcheck_problems(results))
+    problems = selfcheck_problems(results)
+    assert any("no final RESULT line" in problem for problem in problems)
+    assert any("required check(s) missing" in problem and "backend-sandbox-exposure" in problem for problem in problems)
 
 
 def test_a_boot_log_without_the_selfcheck_is_a_failure_not_a_pass() -> None:
     text = load("serial_garbage.log")
     assert parse_selfcheck(text) == []
     assert selfcheck_problems(parse_selfcheck(text)) != []
+
+
+def test_no_fixture_holds_a_bearer_token() -> None:
+    """The script never prints the backend's token; a console log that did would not belong in the repository."""
+    for fixture in FIXTURES.glob("serial_*.log"):
+        text = fixture.read_text(encoding="utf-8")
+        assert "Bearer" not in text, fixture.name
+        for mention in re.finditer(r"token", text, re.IGNORECASE):
+            around = text[max(0, mention.start() - 40) : mention.end() + 20]
+            # Only the script's own wording ("published its token file", "bearer token or a session cookie",
+            # "the bearer token is in none of them") and
+            # kernel/systemd text about other tokens.
+            assert re.search(
+                r"token file|bearer token (?:is in none|or a session cookie)|MPTCP token|ask-password", around
+            ), f"{fixture.name}: {around!r}"
+
+
+# ---- installed systems: the required set depends on what was booted --------------------------------------------------
+
+
+def installed_run(**overrides: str) -> str:
+    """Every required check of an installed system passing, then a RESULT line; `overrides` as in complete_run."""
+    names = required_checks(installed=True)
+    lines = [overrides.get(name) or line(name, "PASS", "ok") for name in names]
+    return "\n".join([*lines, line("RESULT", "PASS", f"{len(names)}/{len(names)}")])
+
+
+def test_a_live_boot_requires_the_sixteen_and_an_installed_one_adds_exactly_the_installed_only_checks() -> None:
+    assert required_checks(installed=False) == REQUIRED_CHECKS
+    assert required_checks(installed=True) == (*REQUIRED_CHECKS, *INSTALLED_ONLY_CHECKS)
+    assert len(REQUIRED_CHECKS) == 16
+    assert len(required_checks(installed=True)) == 18
+
+
+def test_the_installed_only_checks_are_new_names_without_duplicates() -> None:
+    assert len(set(INSTALLED_ONLY_CHECKS)) == len(INSTALLED_ONLY_CHECKS)
+    assert not set(INSTALLED_ONLY_CHECKS) & set(REQUIRED_CHECKS)
+
+
+def test_a_complete_installed_run_passes_only_when_judged_as_installed() -> None:
+    results = parse_selfcheck(installed_run())
+    assert selfcheck_problems(results, installed=True) == []
+    live_view = selfcheck_problems(results)  # the same output judged as a live boot
+    assert len(live_view) == 1
+    assert live_view[0].startswith("installed-only check(s) reported by a live boot: root-encrypted, no-live-remnants")
+
+
+def test_a_live_run_is_not_enough_for_an_installed_system_and_both_missing_checks_are_named() -> None:
+    (found,) = selfcheck_problems(parse_selfcheck(complete_run()), installed=True)
+    assert found.startswith("required check(s) missing from the output: root-encrypted, no-live-remnants (")
+
+
+def test_an_installed_run_that_lost_one_installed_only_check_names_it() -> None:
+    names = required_checks(installed=True)
+    kept = [name for name in names if name != "root-encrypted"]
+    text = "\n".join([*(line(name, "PASS", "ok") for name in kept), line("RESULT", "PASS", f"{len(kept)}/{len(kept)}")])
+    (found,) = selfcheck_problems(parse_selfcheck(text), installed=True)
+    assert "root-encrypted (" in found
+    assert "no-live-remnants" not in found
+
+
+@pytest.mark.parametrize("name", INSTALLED_ONLY_CHECKS)
+def test_a_failing_installed_only_check_is_reported_as_failed(name: str) -> None:
+    n = len(required_checks(installed=True))
+    text = installed_run(**{name: line(name, "FAIL", "broken")}).replace(f"|PASS|{n}/{n}", f"|FAIL|{n - 1}/{n}")
+    assert selfcheck_problems(parse_selfcheck(text), installed=True) == [f"{name} FAILED: broken"]
+
+
+def test_an_installed_run_whose_summary_still_counts_sixteen_is_a_failure() -> None:
+    n = len(required_checks(installed=True))
+    text = installed_run().replace(f"|PASS|{n}/{n}", "|PASS|16/16")
+    problems = selfcheck_problems(parse_selfcheck(text), installed=True)
+    assert any("RESULT reports 16/16 but 18/18 check lines were seen" in problem for problem in problems)
+
+
+def test_a_real_installed_log_is_accepted_as_installed_and_refused_as_live() -> None:
+    results = parse_selfcheck(load("serial_installed_all_pass.log"))
+    assert selfcheck_problems(results, installed=True) == []
+    assert [result.name for result in results if result.name != "RESULT"] == list(required_checks(installed=True))
+    assert results[-1] == CheckResult("RESULT", True, "18/18")
+    assert selfcheck_problems(results) != []

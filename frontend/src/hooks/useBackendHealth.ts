@@ -17,14 +17,11 @@ export const HEALTH_RETRY_MAX_MS = 30_000;
  */
 export type UnreachableCause = 'network' | 'timeout' | 'http' | 'invalid-response' | 'unexpected';
 
-/** Failures that retrying cannot fix: the page holds no token, or the backend refused the one it holds. */
-export type UnauthorizedCause = 'no-token' | 'rejected';
-
 export type BackendHealth =
   | { status: 'connecting' }
   | { status: 'connected'; health: HealthResponse }
   | { status: 'unreachable'; cause: UnreachableCause; httpStatus: number | null }
-  | { status: 'unauthorized'; cause: UnauthorizedCause };
+  | { status: 'unauthorized' };
 
 export interface BackendHealthOptions {
   pollIntervalMs?: number;
@@ -47,7 +44,8 @@ export function retryDelayMs(failures: number, baseMs: number, maxMs: number): n
  * - While connected it re-checks every `pollIntervalMs`.
  * - After a failed check the state is `unreachable` and checks are retried with exponential backoff; the first
  *   success resets the backoff.
- * - A 401 (or a missing token) ends in `unauthorized` and polling stops: the same token will keep being refused.
+ * - A 401 ends in `unauthorized` and polling stops: this window has no valid session and the page cannot create one
+ *   (the kiosk launcher installs it), so asking again would only be refused again.
  * - A failure that is not an ApiError is shown as `unreachable` with cause `unexpected`, logged, and retried like
  *   any other failure; it never ends polling.
  *
@@ -95,8 +93,8 @@ export function useBackendHealth(
           retryLater('unexpected', null);
           return;
         }
-        if (error.kind === 'no-token' || error.kind === 'unauthorized') {
-          setHealth({ status: 'unauthorized', cause: error.kind === 'no-token' ? 'no-token' : 'rejected' });
+        if (error.kind === 'unauthorized') {
+          setHealth({ status: 'unauthorized' });
           return;
         }
         if (error.kind === 'aborted') {

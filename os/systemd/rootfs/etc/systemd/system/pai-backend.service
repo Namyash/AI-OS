@@ -21,9 +21,10 @@ RestartPreventExitStatus=77 78
 
 # State survives reboots (/var/lib/pai, on the encrypted volume) and is private to the service account (0700): the
 # kiosk user shares the group only to read the token, so it must not be able to list or enter the data. The runtime
-# directory holds the per-start bearer token (/run/pai/token) and nothing else; its group access (0750) is what
-# lets the kiosk user reach the token. Both defaults match backend/core/config.py. Every file the service creates
-# is private (UMask 0077) except the token, which the backend sets to 0640 itself.
+# directory holds the per-start bearer token (/run/pai/token) and the endpoint file (/run/pai/endpoint, the URL the
+# service listens on) and nothing else; its group access (0750) is what lets the kiosk user reach them. Both
+# defaults match backend/core/config.py. Every file the service creates is private (UMask 0077) except those two,
+# which the backend sets to 0640 itself.
 StateDirectory=pai
 StateDirectoryMode=0700
 RuntimeDirectory=pai
@@ -35,6 +36,8 @@ LimitCORE=0
 NoNewPrivileges=yes
 CapabilityBoundingSet=
 AmbientCapabilities=
+# strict makes the whole file system read-only to the service, not hidden: that is how it reads the UI it serves
+# (/opt/pai/frontend, PAI_STATIC_DIR) and nothing else is opened up for it. The UI directory must never be writable.
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes

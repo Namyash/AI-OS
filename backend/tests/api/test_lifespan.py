@@ -12,11 +12,12 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+import backend.api.app as app_module
 from backend.api.app import create_app
-from backend.core.config import DATA_DIR_MODE, Settings
+from backend.core.config import DATA_DIR_MODE, Settings, load_settings
 from backend.core.logging import redact_text
 from backend.database import migrate
-from backend.tests.api.support import client_for
+from backend.tests.api.support import PORT, client_for
 
 StartApp = Callable[[], AbstractContextManager[TestClient]]
 posix_only = pytest.mark.skipif(os.name != "posix", reason="POSIX file modes and symlink semantics")
@@ -24,6 +25,17 @@ posix_only = pytest.mark.skipif(os.name != "posix", reason="POSIX file modes and
 
 def _bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def _environment(tmp_path: Path, **extra: str) -> dict[str, str]:
+    return {
+        "PAI_PORT": str(PORT),
+        "PAI_DATA_DIR": str(tmp_path / "state"),
+        "PAI_TOKEN_FILE": str(tmp_path / "runtime" / "token"),
+        "PAI_ENDPOINT_FILE": str(tmp_path / "runtime" / "endpoint"),
+        "PAI_STATIC_DIR": str(tmp_path / "ui"),
+        **extra,
+    }
 
 
 # ------------------------------------------------------------------ token lifecycle
@@ -47,7 +59,7 @@ def test_each_start_replaces_the_token_and_revokes_the_old_one(settings: Setting
         assert new != old
         assert second.get("/health", headers=_bearer(new)).status_code == 200
         assert second.get("/health", headers=_bearer(old)).status_code == 401
-    assert [p.name for p in settings.token_file.parent.iterdir()] == ["token"]
+    assert sorted(p.name for p in settings.token_file.parent.iterdir()) == ["endpoint", "token"]
 
 
 @posix_only
@@ -65,6 +77,91 @@ def test_a_leftover_world_readable_token_file_is_replaced_by_a_0640_one(
 def test_the_live_token_is_masked_if_it_is_ever_logged(client: TestClient, settings: Settings) -> None:
     token = settings.token_file.read_text(encoding="ascii")
     assert token not in redact_text(f"debug dump: {token} and Authorization: Bearer {token}")
+
+
+# ------------------------------------------------------------------ endpoint file
+def test_endpoint_file_holds_exactly_the_url_the_service_listens_on(client: TestClient, settings: Settings) -> None:
+    # Bytes, not text: no trailing newline, and nothing else.
+    assert settings.endpoint_file.read_bytes() == f"http://127.0.0.1:{PORT}".encode("ascii")
+
+
+def test_an_ipv6_endpoint_is_written_with_brackets_around_the_address(tmp_path: Path) -> None:
+    settings = load_settings(_environment(tmp_path, PAI_HOST="::1"))
+    with client_for(create_app(settings)):
+        assert settings.endpoint_file.read_bytes() == f"http://[::1]:{PORT}".encode("ascii")
+
+
+@posix_only
+def test_endpoint_file_mode_is_0640(client: TestClient, settings: Settings) -> None:
+    assert stat.S_IMODE(settings.endpoint_file.stat().st_mode) == 0o640
+
+
+@posix_only
+def test_a_leftover_world_readable_endpoint_file_is_replaced_by_a_0640_one(
+    settings: Settings, start_app: StartApp
+) -> None:
+    settings.endpoint_file.parent.mkdir(parents=True)
+    settings.endpoint_file.write_text("http://stale")
+    settings.endpoint_file.chmod(0o666)
+    with start_app():
+        assert settings.endpoint_file.read_text(encoding="ascii") == f"http://127.0.0.1:{PORT}"
+        assert stat.S_IMODE(settings.endpoint_file.stat().st_mode) == 0o640
+
+
+def test_the_endpoint_is_published_with_the_shared_atomic_mechanism_and_before_the_token(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    published: list[Path] = []
+    real_publish = app_module.publish_file
+
+    def recording_publish(path: Path, content: str) -> None:
+        real_publish(path, content)
+        published.append(path)
+
+    monkeypatch.setattr(app_module, "publish_file", recording_publish)
+    with client_for(create_app(settings)):
+        # A reader that waits for the token must find the endpoint already there.
+        assert published == [settings.endpoint_file, settings.token_file]
+
+
+def test_a_failed_publication_keeps_the_previous_endpoint_whole_and_leaves_no_temporary_file(
+    tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with client_for(create_app(settings)):
+        pass
+    previous = settings.endpoint_file.read_bytes()
+    previous_token = settings.token_file.read_bytes()
+
+    def broken_replace(*_args: object, **_kwargs: object) -> None:
+        raise OSError("disk went away")
+
+    monkeypatch.setattr("backend.api.auth.os.replace", broken_replace)
+    other_port = load_settings(_environment(tmp_path, PAI_PORT=str(PORT + 1)))  # a start that would write other content
+    with pytest.raises(OSError, match="disk went away"), client_for(create_app(other_port)):
+        pytest.fail("the app must not start")
+    assert settings.endpoint_file.read_bytes() == previous  # never half-written, never replaced
+    assert settings.token_file.read_bytes() == previous_token
+    assert sorted(p.name for p in settings.endpoint_file.parent.iterdir()) == ["endpoint", "token"]
+
+
+def test_nothing_is_published_before_the_database_is_ready(
+    tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    broken = tmp_path / "failing-migrations"
+    broken.mkdir()
+    (broken / "0001_broken.sql").write_text("THIS IS NOT SQL;")
+    _use_migrations_from(monkeypatch, broken)
+    with pytest.raises(migrate.MigrationError), client_for(create_app(settings)):
+        pytest.fail("the app must not start")
+    assert not settings.endpoint_file.exists()
+    assert not settings.token_file.exists()
+
+
+def test_a_service_that_cannot_publish_its_endpoint_never_publishes_a_token(settings: Settings) -> None:
+    settings.endpoint_file.mkdir(parents=True)  # a directory where the endpoint file should be
+    with pytest.raises(OSError), client_for(create_app(settings)):
+        pytest.fail("the app must not start")
+    assert not settings.token_file.exists()
 
 
 # ------------------------------------------------------------------ migrations
@@ -123,6 +220,7 @@ def test_startup_aborts_on_an_unreadable_migration_directory(
     with pytest.raises(migrate.MigrationError, match="Invalid migration filename"), client_for(create_app(settings)):
         pytest.fail("the app must not start")
     assert not settings.token_file.exists(), "no token may be published for a service that did not start"
+    assert not settings.endpoint_file.exists()
 
 
 def test_startup_aborts_when_a_migration_fails(

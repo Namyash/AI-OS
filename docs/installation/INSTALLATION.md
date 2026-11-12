@@ -24,11 +24,20 @@ The guest cannot enforce these; they are controlled by the host. Disable:
 - Do not use suspend or snapshots with memory for sensitive sessions: they write guest RAM, including the disk key, to the host disk.
 - Keep the host's own disk encrypted (BitLocker, FileVault, LUKS) and consider the hypervisor's VM encryption as an extra layer.
 
-## Planned install flow
+## What exists today
 
-1. Boot the ISO, start the installer.
-2. Choose your encryption passphrase and store the recovery key it displays. **Losing both makes your data unrecoverable.**
-3. First boot: create your account, pick or download a model, resource check, interface opens.
+The installer **engine** exists and is tested end to end under QEMU: it installs the live system onto a blank disk with an encrypted root
+(LUKS2, argon2id, your passphrase plus a random recovery key), BIOS and UEFI bootloaders, and no default account; the installed system boots,
+asks for the passphrase at startup, and passes the same security self-checks as the live image. What does **not** exist yet is the guided
+screen that asks for the passphrase and disk inside the interface: today the installer is driven by a plan file
+(`docs/development/INSTALLER.md`, `docs/development/INSTALL_TESTING.md`), meant for provisioning and testing. It has not been run on VMware,
+VirtualBox or real hardware.
+
+## Target install flow (once the wizard exists)
+
+1. Boot the ISO; the interface offers to install.
+2. Choose the target disk (it will be erased), choose your encryption passphrase (at least 12 characters) and store the recovery key it displays once. **Losing both makes your data unrecoverable.**
+3. First boot: type the passphrase at the unlock prompt, then create your account, pick or download a model, resource check, interface opens.
 
 Limits worth knowing now: `/boot` is not encrypted (a GRUB limitation with LUKS2/argon2id), and a malicious host can still read the running VM
 (see the [threat model](../security/THREAT_MODEL.md)).

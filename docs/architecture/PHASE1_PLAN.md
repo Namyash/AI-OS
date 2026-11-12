@@ -13,6 +13,13 @@ Each milestone is independently testable and has an acceptance test; later miles
 | M1.5 | Installer + LUKS2 | Calamares config (LUKS2 argon2id, unencrypted `/boot`, ESP), first-boot wizard (account, passphrase, recovery key), `/var/lib/pai` on the encrypted volume | Automated QEMU install, reboot, unlock; `cryptsetup luksDump` shows LUKS2/argon2id; wrong passphrase fails |
 | M1.6 | Hypervisor matrix | VMware Workstation and VirtualBox VM recipes, guest-integration lockdown checklist | Manual run recorded in `docs/installation/`; clipboard, drag-and-drop and shared folders confirmed disabled |
 
+## Status (2026-11-07)
+
+Done and verified: M0, M1.1, M1.2, M1.3, M1.4a, M1.4b and M1.5 (as an engine plus an automated install test under QEMU; the wizard in the
+kiosk and the first-boot account step are not built, so M1.5's "first-boot wizard" deliverable is only partly met). M1.4's acceptance test ("boot screenshot shows the shell") is met in the form the dev
+machine allows: the booted image's self-check reports the kiosk running and the shell rendered with the backend connected (QEMU has no screen to
+photograph). Not started: the M1.5 wizard, M1.6. Evidence and caveats: `DEVELOPMENT_STATUS.md`.
+
 ## Order of work and why
 
 1. **Firewall and integration lockdown before any service** (M1.1): there is nothing to protect later if the base is open.

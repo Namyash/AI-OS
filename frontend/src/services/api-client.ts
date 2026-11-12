@@ -8,8 +8,6 @@ const MAX_BACKEND_TEXT_LENGTH = 200;
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
 export interface ApiClientOptions {
-  /** Bearer token, or null when the page was opened without one. Kept in memory only. */
-  token: string | null;
   timeoutMs?: number;
   /** Transport; defaults to the global `fetch`. Replaced in tests. */
   fetch?: FetchLike;
@@ -39,7 +37,7 @@ const defaultFetch: FetchLike = (input, init) => globalThis.fetch(input, init);
 /**
  * Resolves a request path against the page's own origin and refuses anything that leaves it.
  * Going through the URL parser (instead of testing the string) also catches forms such as `//host`, `/\host`
- * and absolute URLs, so the bearer token can only ever be sent to the backend that served this page.
+ * and absolute URLs, so the UI can only ever call the backend that served this page.
  */
 function resolveSameOrigin(path: string): string {
   const { origin } = globalThis.location;
@@ -82,7 +80,7 @@ async function failureFromResponse(response: Response): Promise<ApiError> {
     details.code = failure.code;
   }
   if (response.status === 401) {
-    return new ApiError('unauthorized', 'The backend rejected the access token.', details);
+    return new ApiError('unauthorized', 'The backend did not accept this window: it has no valid session.', details);
   }
   const message = failure
     ? truncate(`HTTP ${response.status} ${failure.code}: ${failure.message}`)
@@ -91,19 +89,18 @@ async function failureFromResponse(response: Response): Promise<ApiError> {
 }
 
 /**
- * The only way the UI talks to the backend. Same-origin GET requests carrying `Authorization: Bearer <token>`.
+ * The only way the UI talks to the backend. Same-origin GET requests.
  *
- * The token lives in a private field: it is not enumerable, so `JSON.stringify`, `console.log` and React
- * DevTools cannot reveal it. It is never placed in a URL, a query string, an error message or a log line.
+ * The page holds no credential. The kiosk launcher installs an HttpOnly session cookie that the browser attaches to
+ * same-origin requests by itself, so this code neither sees nor sends a secret. A request without a valid session is
+ * answered 401 and surfaces as the `unauthorized` error.
  * Every reply is checked with a caller-supplied type guard because the backend is an external boundary.
  */
 export class ApiClient {
-  readonly #token: string | null;
   readonly #timeoutMs: number;
   readonly #fetch: FetchLike;
 
-  constructor({ token, timeoutMs = DEFAULT_TIMEOUT_MS, fetch: fetchImpl = defaultFetch }: ApiClientOptions) {
-    this.#token = token;
+  constructor({ timeoutMs = DEFAULT_TIMEOUT_MS, fetch: fetchImpl = defaultFetch }: ApiClientOptions = {}) {
     this.#timeoutMs = timeoutMs;
     this.#fetch = fetchImpl;
   }
@@ -116,10 +113,6 @@ export class ApiClient {
    * A `signal` that is already aborted rejects as `aborted` without calling the transport.
    */
   async get<T>(path: string, guard: (value: unknown) => value is T, { signal }: RequestOptions = {}): Promise<T> {
-    const token = this.#token;
-    if (token === null) {
-      throw new ApiError('no-token', 'The page was opened without an access token.');
-    }
     const url = resolveSameOrigin(path);
     if (signal?.aborted) {
       throw new ApiError('aborted', 'The request was cancelled.');
@@ -137,11 +130,12 @@ export class ApiClient {
     try {
       const response = await this.#fetch(url, {
         method: 'GET',
-        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+        headers: { Accept: 'application/json' },
         signal: request.signal,
-        // The token is the only credential: no cookies, no cached copies, no referrer, and no redirects that
-        // could carry the request somewhere else.
-        credentials: 'omit',
+        // The session cookie is the only credential and it travels with same-origin requests only (this is the
+        // fetch default, written out because the whole sign-in rests on it). No cached copies, no referrer, and no
+        // redirects that could carry the request somewhere else.
+        credentials: 'same-origin',
         cache: 'no-store',
         redirect: 'error',
         referrerPolicy: 'no-referrer',

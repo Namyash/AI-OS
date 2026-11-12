@@ -9,6 +9,9 @@ set -euo pipefail
 
 SRC=/src/os
 BACKEND_SRC=/src/backend # mounted read-only by build-iso.sh, like os/
+KIOSK_SRC=/src/kiosk
+INSTALLER_SRC=/src/installer
+FRONTEND_SRC=/src/frontend
 WORK=/work/live
 OUT=/out
 
@@ -45,8 +48,13 @@ lb config noauto \
     --security "$SECURITY" \
     --updates "$UPDATES"
 
-# Package lists, overlays and hooks of every component under os/, and the backend code: see assemble-config.sh.
-bash "$SRC/build/assemble-config.sh" "$SRC" "$BACKEND_SRC" config
+# The production build of the UI, made from a copy of the sources (build-frontend.sh); only its dist/ goes on the image.
+FRONTEND_DIST=$(mktemp -d)
+bash "$SRC/build/build-frontend.sh" "$FRONTEND_SRC" "$FRONTEND_DIST"
+
+# Package lists, overlays and hooks of every component under os/, and the code under /opt/pai (the backend, the kiosk
+# launcher, the installer engine, the built UI): see assemble-config.sh.
+bash "$SRC/build/assemble-config.sh" "$SRC" "$BACKEND_SRC" "$KIOSK_SRC" "$INSTALLER_SRC" "$FRONTEND_DIST" config
 
 lb build
 

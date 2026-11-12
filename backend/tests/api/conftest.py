@@ -22,6 +22,8 @@ def settings(tmp_path: Path) -> Settings:
             "PAI_PORT": str(PORT),
             "PAI_DATA_DIR": str(tmp_path / "state"),
             "PAI_TOKEN_FILE": str(tmp_path / "runtime" / "token"),
+            "PAI_ENDPOINT_FILE": str(tmp_path / "runtime" / "endpoint"),
+            "PAI_STATIC_DIR": str(tmp_path / "ui"),  # not created: the API tests run without a UI unless one is made
         }
     )
 

@@ -20,7 +20,8 @@ docker build -t "$IMAGE" "$ROOT/os/build"
 docker run --rm --privileged \
     -e PAI_DISTRIBUTION -e PAI_ARCH -e PAI_MIRROR -e PAI_SNAPSHOT \
     -v "$ROOT/os:/src/os:ro" \
-    -v "$ROOT/backend:/src/backend:ro" \
+    -v "$ROOT/backend:/src/backend:ro"     -v "$ROOT/kiosk:/src/kiosk:ro"     -v "$ROOT/installer:/src/installer:ro" \
+    -v "$ROOT/frontend:/src/frontend:ro" \
     -v pai-live-build:/work \
     -v "$ROOT/dist:/out" \
     "$IMAGE" /src/os/build/in-container-build.sh

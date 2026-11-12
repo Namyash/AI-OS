@@ -77,7 +77,13 @@ def _pretend_euid(monkeypatch: pytest.MonkeyPatch, euid: int) -> None:
 
 
 def _environment(tmp_path: Path, **extra: str) -> dict[str, str]:
-    return {"PAI_DATA_DIR": str(tmp_path / "state"), "PAI_TOKEN_FILE": str(tmp_path / "run" / "token"), **extra}
+    return {
+        "PAI_DATA_DIR": str(tmp_path / "state"),
+        "PAI_TOKEN_FILE": str(tmp_path / "run" / "token"),
+        "PAI_ENDPOINT_FILE": str(tmp_path / "run" / "endpoint"),
+        "PAI_STATIC_DIR": str(tmp_path / "ui"),
+        **extra,
+    }
 
 
 # ------------------------------------------------------------------ root refusal

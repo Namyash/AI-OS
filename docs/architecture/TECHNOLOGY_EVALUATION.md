@@ -6,7 +6,7 @@ Verdicts are decisions for the initial release, with the condition under which e
 |---|---|---|---|
 | Base distro | Debian 13 stable | Ubuntu Server LTS | Smaller, no snap/Pro/telemetry stack to remove, `snapshot.debian.org` for reproducible package sets. Revisit if a required driver/package only exists on Ubuntu. |
 | ISO tooling | live-build in a container | Cubic, mkosi, debos | Official, declarative, scriptable on CI and Windows-via-Docker. mkosi is a candidate if reproducibility needs exceed live-build. |
-| Installer | Calamares | Debian-installer preseed, custom installer | Mature LUKS2 support and branding; avoids a bespoke disk-partitioning tool. d-i preseed is the fallback if Calamares customisation proves brittle. |
+| Installer | Custom engine (stdlib Python, copies the live root; BIOS and UEFI GRUB; LUKS2 argon2id) | Calamares, Debian-installer preseed | Decided 2026-11-10, reversing Phase 0: Calamares needs Qt and a display and cannot be driven by our own wizard or tested headless under emulation. Cost: we own a disk-destroying component (risk R17), so it has strict guardrails, fake-runner and real-tool tests, and an end-to-end QEMU install test. |
 | Disk encryption | LUKS2, argon2id, unencrypted `/boot` | Encrypted `/boot` (needs pbkdf2) | GRUB cannot do argon2id; weaker KDF for the whole volume is the worse trade. Revisit with Secure Boot + UKI. |
 | UI shell | React + TypeScript in a Chromium kiosk under `cage` | Tauri (WebKitGTK + Rust), Electron | One browser reused by Playwright; no Rust toolchain in the image. Revisit in Phase 6 for native integration needs. |
 | Backend | Python ≥ 3.12, FastAPI, Pydantic v2, asyncio | Go, Rust | Mandated; best local-AI ecosystem. Debian 13 ships Python 3.13, so CI tests 3.12 and 3.13. |

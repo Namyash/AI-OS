@@ -16,14 +16,14 @@ Non-goals (initial release): a custom kernel, protection from a malicious hyperv
 |---|---|---|
 | Distribution | Debian 13 "trixie" (current stable) | No snap/telemetry/Pro-advert components to strip, small minimal base, AppArmor on by default, `snapshot.debian.org` allows reproducible builds. Ubuntu Server remains an acceptable fallback; nothing above the package layer depends on the choice. |
 | ISO build | `live-build` inside a pinned Debian container | Official Debian tool, scriptable, runs from Docker on a Windows dev machine. |
-| Installer | Calamares (LUKS2 partitioning module) + our first-boot wizard | Avoids writing a disk installer (a high-risk component). Wizard handles account, passphrase confirmation, model choice. |
+| Installer | A small custom, root-only engine (`installer/`) that copies the live root onto a LUKS2 layout; the kiosk wizard will drive it later | Reverses the Phase 0 choice (Calamares needs Qt and a display, cannot be driven by our wizard or tested headless). The disk-destroying risk is handled by hard guardrails and tests: see [INSTALLER_DESIGN](INSTALLER_DESIGN.md). |
 | Init | systemd | Required by spec; gives sandboxing directives and per-service cgroups. |
 | Boot layout | EFI/BIOS + **unencrypted `/boot`**, LUKS2 root (argon2id) | GRUB cannot unlock argon2id LUKS2 volumes. Cost: kernel/initramfs are not confidentiality- or integrity-protected on disk. Mitigation path: Secure Boot + signed UKI in a later phase. |
 
 ## 3. Runtime topology
 
 ```
- tty1 ─ cage (Wayland kiosk) ─ chromium --app ──HTTP 127.0.0.1 + bearer token──┐
+ tty1 ─ cage (Wayland kiosk) ─ chromium --app ──HTTP 127.0.0.1 + HttpOnly session cookie──┐
                                                                                ▼
  pai-backend (FastAPI, user pai) ── Unix socket ──► pai-llm  (llama-server, user pai-llm, NO network)
         │  │  └─ Unix socket ─────► pai-privd (root helper, allow-listed verbs, approval-token gated)
@@ -102,8 +102,10 @@ memory allows (typically ≥ 12–16 GB VM). Only one large model is loaded at a
    passphrase-encrypted backups/exports (restic).
 4. **Embeddings through llama.cpp** (`--embedding` with a small GGUF embedder) instead of PyTorch, avoiding a
    multi-GB dependency.
-5. **Loopback HTTP, not a Unix socket, for the UI.** A browser cannot speak to a Unix socket; a per-boot random
-   bearer token and Origin checks protect the loopback listener.
+5. **Loopback HTTP, not a Unix socket, for the UI.** A browser cannot speak to a Unix socket. Host and Origin checks plus
+   authentication on every route protect the loopback listener. Tools authenticate with a per-start bearer token; the
+   browser never holds it: the kiosk launcher exchanges it for an expiring session and installs that as an HttpOnly
+   cookie over Chromium's DevTools pipe (see [KIOSK_SESSION_DESIGN](KIOSK_SESSION_DESIGN.md)).
 
 ## 8. Repository layout deviations
 

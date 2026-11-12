@@ -8,9 +8,10 @@ import { SECURITY_HEADERS } from './security-headers';
  */
 export default defineConfig(({ command, mode }) => {
   // Only the servers use the proxy, and both `dev` and `preview` run as the 'serve' command. Resolving it here and
-  // nowhere else means a PAI_BACKEND_URL that is refused stops the servers, which would forward the token to it,
-  // and cannot break `build`. Only PAI_* variables are read, and only here (Vite exposes VITE_* variables to client
-  // code, and none are used).
+  // nowhere else means a PAI_BACKEND_URL that is refused stops the servers, which could attach the developer's token
+  // to requests for it, and cannot break `build`: a production build never reads PAI_BACKEND_URL or
+  // PAI_DEV_TOKEN_FILE. Only PAI_* variables are read, and only here (Vite exposes VITE_* variables to client code,
+  // and none are used).
   const proxy = command === 'serve' ? backendProxy(loadEnv(mode, process.cwd(), 'PAI_')) : undefined;
 
   return {

@@ -2,6 +2,6 @@
 
 Typed API client for the backend; the only place the UI performs I/O.
 
-- `token.ts`: reads the access token from the URL fragment once and strips it from the address bar.
-- `api-client.ts`, `api-error.ts`: same-origin requests with `Authorization: Bearer`, timeout, typed errors.
+- `api-client.ts`, `api-error.ts`: same-origin GET requests with timeout and typed errors. The page holds no credential:
+  the browser attaches the HttpOnly session cookie by itself, and a 401 becomes the `unauthorized` error.
 - `health.ts`: the `/health` contract and its runtime type guard.

@@ -1,0 +1,102 @@
+# pai-lint: network-justified: cage needs AF_NETLINK: libudev (used by wlroots' DRM and libinput backends to follow display and input hotplug) listens on a NETLINK_KOBJECT_UEVENT socket. The baseline IPAddressDeny=any / IPAddressAllow=localhost is not set because it would not apply: with PAMName= logind moves the session's processes out of this unit's cgroup into a session scope, and the address filter is attached to the cgroup (measured under systemd 257: from the scope a connect to an outside address succeeded, from a plain service it did not). Egress is confined by the system firewall (nftables output policy drop, loopback only) and by the browser's managed policy instead.
+# pai-lint: waive ProtectHome: ProtectHome=yes also hides /run/user, where logind creates the session's runtime directory (XDG_RUNTIME_DIR, the Wayland socket); with it cage cannot open its socket (measured under systemd 257). InaccessiblePaths= below hides /home and /root, the rest of what the setting covers.
+# pai-lint: waive PrivateDevices: cage and libseat look up the display and input devices by path (/dev/dri, /dev/input) before logind hands over the opened descriptors, so those nodes must exist in the unit's /dev. Access to them is still decided by their permissions (the account is not in the video or input group) and by logind.
+# pai-lint: waive ProcSubset: Chromium reads /proc/meminfo, /proc/cpuinfo and /proc/sys; with ProcSubset=pid the browser exits at start (measured). ProtectProc=invisible still hides every other account's processes.
+# pai-lint: waive RestrictNamespaces: Chromium's own sandbox puts each renderer in new user, pid and network namespaces. Measured: allowing only two of the three, or none, ends in "No usable sandbox" and the browser exits; --no-sandbox would be the only way out. Exactly those three are allowed, not mount, ipc, uts or cgroup.
+# pai-lint: waive MemoryDenyWriteExecute: V8 (Chromium's JavaScript engine) needs memory that is writable and then executable. Measured: with MemoryDenyWriteExecute=yes the browser starts but never renders the page.
+# pai-lint: waive SystemCallFilter: Chromium's sandbox setup calls chroot (in @privileged, which the baseline removes). Measured: with the baseline filter the browser exits with "No usable sandbox"; @system-service plus chroot is enough. The filter stays an allow list and a denied call fails with EPERM instead of killing the process.
+[Unit]
+Description=Private AI OS kiosk (cage and Chromium on tty1)
+Documentation=file:///opt/pai/kiosk/launcher.py
+# The backend publishes the endpoint and token the launcher needs, and a backend restart invalidates every session
+# (they live in its memory), so the kiosk restarts with it: PartOf= passes a stop or restart of the backend on.
+Wants=pai-backend.service systemd-logind.service dbus.socket
+After=systemd-user-sessions.service systemd-logind.service dbus.socket pai-backend.service
+PartOf=pai-backend.service
+# The kiosk owns tty1. getty@tty1 is masked at build time (os/kiosk/hooks); this makes the conflict explicit.
+Conflicts=getty@tty1.service
+After=getty@tty1.service
+# No virtual terminal, no display stack, no kiosk.
+ConditionPathExists=/dev/tty0
+
+[Service]
+Type=exec
+User=pai-ui
+WorkingDirectory=/opt/pai
+# cage runs one program full screen and exits with that program's exit status, so the launcher's status (78 = bad
+# configuration, other non-zero = failure) reaches systemd. -d: no client-side decorations. No -s: nobody can switch
+# away to another virtual terminal. python3 -s: no per-user site directory, so a *.pth file in the account's
+# writable profile can never run.
+ExecStart=/usr/bin/cage -d -- /usr/bin/python3 -s -m kiosk
+Environment=PYTHONDONTWRITEBYTECODE=1
+# logind hands cage the display and input devices (the account is in neither the video nor the input group); wlroots
+# draws with the pixman software renderer (the image targets virtual machines without a GPU) and without hardware
+# cursor planes, which virtual display adapters often lack.
+Environment=XDG_SESSION_TYPE=wayland
+Environment=LIBSEAT_BACKEND=logind
+Environment=WLR_RENDERER=pixman
+Environment=WLR_NO_HARDWARE_CURSORS=1
+# The launcher's output is logged under this identifier. The session's processes run in a session scope, not in this
+# unit's cgroup, so `journalctl -u pai-kiosk.service` shows only systemd's lines: read it with `journalctl -t pai-kiosk`.
+SyslogIdentifier=pai-kiosk
+Restart=on-failure
+RestartSec=2
+# 78 = invalid configuration or a browser that is not installed (kiosk/errors.py): a restart cannot fix it.
+RestartPreventExitStatus=78
+TimeoutStopSec=15
+
+# A login session on tty1 for logind, through the standard PAM stack: pam_systemd registers the session on seat0,
+# creates /run/user/<uid> and sets XDG_RUNTIME_DIR. The unit takes the terminal over from the console.
+PAMName=login
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty-fail
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty1
+UtmpMode=user
+
+# The browser profile (private, emptied at every start) is the unit's own state; the readiness file is runtime state
+# that the boot self-check reads, so its directory is open to read (0755) and holds nothing else. Both paths are the
+# defaults of kiosk/config.py. The account shares the backend's group only to read the token and writes nothing under
+# /var/lib/pai or /run/pai. /run/user is writable because the session's runtime directory (the Wayland socket) is
+# created there and ProtectSystem=strict would otherwise make it read-only.
+StateDirectory=pai-ui
+StateDirectoryMode=0700
+RuntimeDirectory=pai-ui
+RuntimeDirectoryMode=0755
+ReadWritePaths=/run/user
+UMask=0077
+LimitCORE=0
+
+# Sandbox
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=no
+InaccessiblePaths=/home /root
+PrivateTmp=yes
+PrivateDevices=no
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=all
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+RestrictNamespaces=user pid net
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=no
+SystemCallArchitectures=native
+SystemCallFilter=@system-service @sandbox chroot
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

@@ -3,7 +3,9 @@
 Redaction is applied by a handler filter, so it covers every record that reaches the handler, including
 those from third-party loggers such as uvicorn. Three layers, from most to least precise:
 
-1. Literal secrets registered with ``register_secret`` (the live bearer token) are masked wherever they appear.
+1. Literal secrets registered with ``register_secret`` (the live bearer token and the live session ids) are masked
+   wherever they appear. A secret with a limited life is registered under an ``owner`` handle and removed again with
+   ``unregister_secret``, so the registry stays as small as the number of secrets that are alive.
 2. ``key=value`` / ``"key": "value"`` pairs, and structured ``extra`` fields, whose key looks secret-bearing
    (see ``_SENSITIVE_WORDS``) have the value masked. The value of an ``authorization`` or ``cookie`` key is a
    whole header (``Basic <credentials>``, ``a=1; b=2``), so it is masked to the end of its line; the value of
@@ -34,7 +36,7 @@ _MIN_SECRET_LENGTH = 8
 _MAX_DEPTH = 8
 # Header-style keys: the value is a whole header ("Basic <credentials>", "a=1; b=2"), not a single word.
 _LINE_VALUED_WORDS = ("authorization", "cookie")
-_SENSITIVE_WORDS = (*_LINE_VALUED_WORDS, "token", "password", "passwd", "secret", "credential", "key")
+_SENSITIVE_WORDS = (*_LINE_VALUED_WORDS, "token", "password", "passwd", "secret", "credential", "key", "session")
 
 _WORDS_PATTERN = "|".join(_SENSITIVE_WORDS)
 _SENSITIVE_KEY = re.compile(_WORDS_PATTERN, re.IGNORECASE)
@@ -55,15 +57,27 @@ _RECORD_ATTRIBUTES = frozenset(logging.LogRecord("", 0, "", 0, "", (), None).__d
 # uvicorn attaches an ANSI-coloured duplicate of its message here.
 _OMITTED_EXTRAS = frozenset({"color_message"})
 
-_secrets: frozenset[str] = frozenset()
+# Registered literals by owner handle (the value itself unless the caller chose a handle).
+_secrets: Mapping[str, str] = {}
 
 
-def register_secret(value: str) -> None:
-    """Mask ``value`` wherever it appears in a log record from now on."""
+def register_secret(value: str, *, owner: str | None = None) -> None:
+    """Mask ``value`` wherever it appears in a log record from now on.
+
+    Without ``owner`` the registration lasts for the life of the process (the bearer token). With an ``owner``
+    handle that is not the secret itself, ``unregister_secret(owner)`` ends it, so a holder that must not keep the
+    value (the session store keeps only hashes) can still take it back out of the registry.
+    """
     global _secrets  # process-wide registry; rebuilt rather than mutated, so readers need no lock
     if len(value) < _MIN_SECRET_LENGTH:
         raise ValueError(f"a registered secret must be at least {_MIN_SECRET_LENGTH} characters")
-    _secrets = _secrets | {value}
+    _secrets = {**_secrets, value if owner is None else owner: value}
+
+
+def unregister_secret(owner: str) -> None:
+    """Stop masking what was registered under ``owner``. Unknown handles are ignored."""
+    global _secrets
+    _secrets = {handle: value for handle, value in _secrets.items() if handle != owner}
 
 
 def _mask_assignments(text: str) -> str:
@@ -89,7 +103,7 @@ def _mask_assignments(text: str) -> str:
 
 
 def redact_text(text: str) -> str:
-    for secret in _secrets:
+    for secret in _secrets.values():
         text = text.replace(secret, REDACTED)
     return _BEARER.sub(rf"\1 {REDACTED}", _mask_assignments(text))
 

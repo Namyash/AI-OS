@@ -1,0 +1,64 @@
+# pai-lint: capabilities-justified: CAP_DAC_READ_SEARCH is the one capability, and it is only a read: the LUKS header lives on the block device behind the root mapping, whose node (root:disk, 0660) an unprivileged account may not open. The bounding set holds this capability and nothing else, so the unit cannot write anything but its own facts file, cannot become root and cannot reach PID 1 as root.
+# pai-lint: waive PrivateDevices: the unit opens the block device that the root filesystem's dm-crypt mapping sits on, by its /dev node; a private /dev has no block devices. Read access to it is still decided by the node's permissions and by the single capability above.
+[Unit]
+Description=Private AI OS boot self-check: facts about the encrypted root
+Documentation=file:///usr/lib/pai/selfcheck-crypt-facts.py
+# Runs only in a self-check boot, like the self-check it feeds. Whether the system is a live session or an installed one
+# is the self-check's judgement (it looks at the running system); on a live session this unit records that the root
+# filesystem is not on a mapping and nothing more.
+ConditionKernelCommandLine=pai.selfcheck=1
+# The self-check reads the facts file this unit writes, so it comes after. Declared here, not in the self-check's unit:
+# Before= orders only when both are in the boot transaction, which they are (both are wanted by multi-user.target).
+Before=pai-selfcheck.service
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# The same account as the self-check: it can read the backend token's group and nothing else of value, has no login, and
+# is defined in os/systemd/rootfs/usr/lib/sysusers.d/pai.conf.
+User=pai-selfcheck
+# python3 -s -B: no per-user site directory, no bytecode (the code is root-owned and read-only).
+ExecStart=/usr/bin/python3 -s -B /usr/lib/pai/selfcheck-crypt-facts.py /run/pai-selfcheck/crypt-facts
+Environment=PYTHONDONTWRITEBYTECODE=1
+StandardOutput=journal+console
+StandardError=journal+console
+SyslogIdentifier=pai-selfcheck-crypt
+TimeoutStartSec=120
+# /run/pai-selfcheck, owned by the account, holds the facts file. It stays after the unit has finished (RemainAfterExit),
+# which is when the self-check reads it. Mode 0755 so that the self-check's own sandbox, a different unit of the same
+# account, can read it; the file holds names, numbers and device paths only.
+RuntimeDirectory=pai-selfcheck
+RuntimeDirectoryMode=0755
+
+NoNewPrivileges=yes
+AmbientCapabilities=CAP_DAC_READ_SEARCH
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=no
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

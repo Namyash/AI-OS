@@ -9,7 +9,7 @@ export const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const sourceRoot = join(root, 'src');
 
 export interface SourceFile {
-  /** Path from the frontend root, with forward slashes: `src/services/token.ts`. */
+  /** Path from the frontend root, with forward slashes: `src/services/api-client.ts`. */
   path: string;
   /** The file as written. */
   source: string;

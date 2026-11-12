@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiClient, type FetchLike, type RequestOptions } from '../services/api-client';
-import { HEALTH_BODY, hangingFetch, jsonResponse, makeClient, TEST_TOKEN } from '../test/fakes';
+import { HEALTH_BODY, hangingFetch, jsonResponse, makeClient, unauthorizedResponse } from '../test/fakes';
 import {
   type BackendHealthOptions,
   HEALTH_POLL_INTERVAL_MS,
@@ -30,11 +30,7 @@ const ok = () => jsonResponse(HEALTH_BODY);
 const unreachable = () => Promise.reject(new TypeError('Failed to fetch'));
 
 /** The client is created once: a new client on every render would restart polling. */
-function mount(
-  fetch: FetchMock,
-  clientOptions: { token?: string | null; timeoutMs?: number } = {},
-  hookOptions: BackendHealthOptions = {},
-) {
+function mount(fetch: FetchMock, clientOptions: { timeoutMs?: number } = {}, hookOptions: BackendHealthOptions = {}) {
   const client = makeClient(fetch, clientOptions);
   return renderHook(() => useBackendHealth(client, hookOptions));
 }
@@ -163,39 +159,39 @@ describe('useBackendHealth', () => {
   });
 
   it('stops for good on 401 and reports unauthorized', async () => {
-    const fetch = scripted(() => jsonResponse({ error: { code: 'invalid_token', message: 'Bad token.' } }, 401));
+    const fetch = scripted(unauthorizedResponse);
     const { result } = mount(fetch);
 
     await advance(0);
-    expect(result.current).toEqual({ status: 'unauthorized', cause: 'rejected' });
+    expect(result.current).toEqual({ status: 'unauthorized' });
 
     await advance(60 * 60 * 1_000);
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(result.current.status).toBe('unauthorized');
   });
 
-  it('goes unauthorized without any request when the page has no token', async () => {
-    const fetch = scripted(ok);
-    const { result } = mount(fetch, { token: null });
-
-    await advance(0);
-    await advance(HEALTH_POLL_INTERVAL_MS);
-
-    expect(result.current).toEqual({ status: 'unauthorized', cause: 'no-token' });
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('becomes unauthorized if the token is rejected later, for example after a backend restart', async () => {
-    const fetch = scripted(ok, () => jsonResponse({ error: { code: 'invalid_token', message: 'Bad token.' } }, 401));
+  it('becomes unauthorized if the session is refused later, for example after a backend restart', async () => {
+    const fetch = scripted(ok, unauthorizedResponse);
     const { result } = mount(fetch);
     await advance(0);
     expect(result.current.status).toBe('connected');
 
     await advance(HEALTH_POLL_INTERVAL_MS);
 
-    expect(result.current).toEqual({ status: 'unauthorized', cause: 'rejected' });
+    expect(result.current).toEqual({ status: 'unauthorized' });
     await advance(HEALTH_POLL_INTERVAL_MS * 4);
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not mistake another client error for a lost session: a 403 is retried', async () => {
+    const fetch = scripted(() => jsonResponse({ error: { code: 'forbidden_origin', message: 'No.' } }, 403), ok);
+    const { result } = mount(fetch);
+
+    await advance(0);
+    expect(result.current).toEqual({ status: 'unreachable', cause: 'http', httpStatus: 403 });
+
+    await advance(HEALTH_RETRY_BASE_MS);
+    expect(result.current.status).toBe('connected');
   });
 
   it('cancels the in-flight request and all timers on unmount', async () => {
@@ -231,7 +227,7 @@ describe('useBackendHealth', () => {
     }
 
     function mountFailsOnce() {
-      const client = new FailsOnceClient({ token: TEST_TOKEN, fetch: scripted(ok) });
+      const client = new FailsOnceClient({ fetch: scripted(ok) });
       return { client, ...renderHook(() => useBackendHealth(client)) };
     }
 
